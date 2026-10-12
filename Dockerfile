@@ -13,16 +13,18 @@ RUN apk add --no-cache icu-dev libzip-dev postgresql-dev $PHPIZE_DEPS \
     && apk del $PHPIZE_DEPS
 COPY --from=composer:2.9 /usr/bin/composer /usr/bin/composer
 WORKDIR /var/www/html
-COPY . .
+COPY --chown=www-data:www-data . .
 COPY --from=assets /build/public/build public/build
 RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader \
     && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs \
     && chown -R www-data:www-data storage bootstrap/cache
 COPY docker/php.ini /usr/local/etc/php/conf.d/tollgate.ini
 USER www-data
+RUN test -r artisan && test -r public/index.php
 EXPOSE 9000
 CMD ["php-fpm"]
 
 FROM nginx:1.28-alpine AS web
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=app /var/www/html/public /var/www/html/public
+COPY --chown=nginx:nginx --from=app /var/www/html/public /var/www/html/public
+RUN su nginx -s /bin/sh -c 'test -r /var/www/html/public/index.php'
