@@ -5,11 +5,11 @@ on:
   pull_request:
 permissions:
   contents: read
-concurrency:
-  group: tollgate-${{ github.ref }}
-  cancel-in-progress: true
 jobs:
   test:
+    concurrency:
+      group: tollgate-tests-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -65,11 +65,28 @@ jobs:
       - run: APP_ENV=local CACHE_STORE=redis php artisan schedule:work > /tmp/tollgate-scheduler.log 2>&1 &
       - run: npx playwright test
   image:
+    concurrency:
+      group: tollgate-images-${{ github.ref }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate VPS configuration
+        env:
+          DB_PASSWORD: ci-only-password
+          REDIS_PASSWORD: ci-only-password
+          DB_RUNTIME_PASSWORD: ci-only-password
+          BACKUP_DIR: /tmp/tollgate-backups
+          BACKUP_UID: '1000'
+          BACKUP_GID: '1000'
+        run: |
+          cp .env.example .env
+          docker compose -f compose.yaml -f compose.vps.yaml --profile app config --quiet
       - run: docker build --target app -t tollgate-app:check . && docker build --target web -t tollgate-web:check .
   deploy:
+    concurrency:
+      group: tollgate-production
+      cancel-in-progress: false
     needs: [test, image]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
@@ -79,7 +96,7 @@ jobs:
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
           RELEASE_SHA: ${{ github.sha }}
         run: |
@@ -89,4 +106,4 @@ jobs:
           printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
           printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
-          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "bash /srv/tollgate/repository/scripts/deploy.sh $RELEASE_SHA"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "deploy $RELEASE_SHA"

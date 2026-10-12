@@ -1,0 +1,98 @@
+x-logs: &logs
+  driver: json-file
+  options: {max-size: "10m", max-file: "3"}
+x-runtime: &runtime
+  DB_HOST: db
+  DB_PORT: 5432
+  DB_USERNAME: tollgate_app
+  DB_PASSWORD: ${DB_RUNTIME_PASSWORD:?Set DB_RUNTIME_PASSWORD}
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+services:
+  db:
+    ports: !reset []
+    environment:
+      DB_RUNTIME_PASSWORD: ${DB_RUNTIME_PASSWORD:?Set DB_RUNTIME_PASSWORD}
+    mem_limit: 512m
+    cpus: 1
+    logging: *logs
+  redis:
+    ports: !reset []
+    mem_limit: 256m
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "128mb", "--maxmemory-policy", "noeviction"]
+    logging: *logs
+  mailpit:
+    profiles: [mail]
+    ports: !reset []
+  app:
+    environment: *runtime
+    mem_limit: 512m
+    cpus: 1
+    logging: *logs
+  worker:
+    environment: *runtime
+    mem_limit: 512m
+    cpus: 1
+    logging: *logs
+  scheduler:
+    environment: *runtime
+    mem_limit: 256m
+    logging: *logs
+  migrate:
+    profiles: [maintenance]
+    image: tollgate-app:${RELEASE_TAG:-local}
+    env_file: .env
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes: ["storage:/var/www/html/storage"]
+    command: ["php", "artisan", "migrate", "--force", "--seed", "--no-interaction"]
+    mem_limit: 512m
+    logging: *logs
+  backup:
+    image: postgres:17.6-alpine
+    user: "${BACKUP_UID:?Set BACKUP_UID}:${BACKUP_GID:?Set BACKUP_GID}"
+    environment:
+      PGHOST: db
+      PGUSER: ${DB_USERNAME}
+      PGDATABASE: ${DB_DATABASE}
+      PGPASSWORD: ${DB_PASSWORD}
+    volumes: ["${BACKUP_DIR:?Set BACKUP_DIR}:/backups"]
+    command:
+      - sh
+      - -ec
+      - |
+        umask 077
+        while :; do
+          file="/backups/daily-$$(date -u +%Y%m%dT%H%M%SZ).dump"
+          pg_dump -Fc > "$$file.partial"
+          mv "$$file.partial" "$$file"
+          find /backups -name 'daily-*.dump' -mtime +7 -delete
+          echo 'Daily database backup completed'
+          sleep 86400
+        done
+    depends_on:
+      db: {condition: service_healthy}
+    restart: unless-stopped
+    mem_limit: 128m
+    logging: *logs
+  web:
+    networks: [default, devpulse]
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=devpulse
+      - traefik.http.routers.tollgate.rule=Host(`${WEB_DOMAIN:-tollgate.syslora.com}`)
+      - traefik.http.routers.tollgate.entrypoints=web
+      - traefik.http.routers.tollgate.service=tollgate
+      - traefik.http.routers.tollgate.middlewares=tollgate-https
+      - traefik.http.services.tollgate.loadbalancer.server.port=80
+      - traefik.http.middlewares.tollgate-https.headers.customrequestheaders.X-Forwarded-Proto=https
+      - traefik.http.middlewares.tollgate-https.headers.customrequestheaders.X-Forwarded-Port=443
+      - traefik.http.middlewares.tollgate-https.headers.customresponseheaders.X-Robots-Tag=noindex, nofollow
+    mem_limit: 128m
+    logging: *logs
+networks:
+  devpulse:
+    external: true
