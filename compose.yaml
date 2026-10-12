@@ -46,6 +46,9 @@ services:
       MAIL_HOST: mailpit
       MAIL_PORT: 1025
     volumes: ["storage:/var/www/html/storage"]
+    networks:
+      default:
+        aliases: [tollgate-php]
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
