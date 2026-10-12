@@ -101,7 +101,7 @@ class AccountingTest extends LabTestCase
         [$demo,$token] = app(DemoSessions::class)->create();
         $order = $this->paid($demo);
         $payment = Payment::where('order_id', $order->id)->first();
-        app(Billing::class)->dispute($demo->id,$payment->id,'open');
-        $this->withToken($token)->withHeader('Idempotency-Key','disputed-refund-key')->postJson('/api/payments/'.$payment->id.'/refunds',['amount_minor' => 100])->assertConflict();
+        app(Billing::class)->dispute($demo->id, $payment->id, 'open');
+        $this->withToken($token)->withHeader('Idempotency-Key', 'disputed-refund-key')->postJson('/api/payments/'.$payment->id.'/refunds', ['amount_minor' => 100])->assertConflict();
     }
 }

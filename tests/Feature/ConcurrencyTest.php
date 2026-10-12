@@ -66,6 +66,6 @@ class ConcurrencyTest extends LabTestCase
         $order = $this->order($demo);
         $this->concurrent('ingress', $demo->id, $order->id, 8);
         $this->assertDatabaseCount('webhook_events', 1);
-        $this->assertDatabaseCount('webhook_deliveries',8);
+        $this->assertDatabaseCount('webhook_deliveries', 8);
     }
 }
