@@ -6,15 +6,18 @@ For a stuck event, inspect its session timeline and use **Reprocess** only after
 
 Back up with `scripts/backup.sh`, store the dump outside the release directory and run `scripts/restore-check.sh`. Account for the synthetic append-only ledger when planning retention. Archive or rebuild the demo database during a declared maintenance window when the stored-session cap is reached.
 
-## VPS setup, later
+## Syslora VPS
 
-1. Create `/srv/tollgate/repository`, `/srv/tollgate/releases`, `/srv/tollgate/backups` and `/srv/tollgate/.env`. Keep secrets readable only by the deployment operator. Set the public URL, production environment, TLS and secure cookies. Use separate runtime and migration database roles.
-2. Add the app to a dedicated tunnel or reverse-proxy route. Only the loopback web port is published. Do not expose PostgreSQL, Redis or Mailpit publicly. Trust only the actual proxy addresses when forwarding HTTPS; configure this before enabling secure cookies behind a tunnel.
-3. Configure a dedicated SSH deployment key and verified host key. Add GitHub environment `production`, secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_KEY`, `DEPLOY_KNOWN_HOSTS`, and repository variable `DEPLOY_ENABLED=true`. Protected environment approval is optional; enable it for manual promotion.
-4. Run staging, backup/restore and smoke checks before enabling the variable. A push to `main` then deploys only after both test and image jobs pass.
+The checkout is `/home/johnny/development/tollgate`. Private configuration stays in `.env` (mode 600); release archives and backups live under `.local`. `compose.vps.yaml` connects only Nginx to Traefik's `devpulse` network. PostgreSQL and Redis have no published ports; Mailpit is excluded.
 
-Before promotion, confirm `/health`, a checkout/replay scenario, outbox delivery and Horizon on staging. Record the release SHA and backup location. After promotion, repeat those checks on the public HTTPS URL and verify secure cookies through the configured proxy. Run backup restoration against a disposable database; do not overwrite the active database as a smoke check.
+The VPS uses `APP_ENV=production`, `APP_DEBUG=false`, HTTPS and secure host-only cookies. `TRUSTED_PROXIES` and `TRAEFIK_IP` contain the actual Traefik address; recheck them if that container is recreated. Nginx accepts Cloudflare's client IP only from that proxy, so rate limits apply to visitors rather than the tunnel. Direct requests cannot supply a trusted client-IP header. Database migrations and backups use the owner account, while HTTP, Horizon and the scheduler use `tollgate_app`, which cannot create roles or truncate tables. Demo content stays simulated and noindex.
 
-The deployment script locks concurrent deploys, archives the exact commit, builds release-tagged images, backs up PostgreSQL, applies migrations and waits for readiness. On failure it restores previous images when available. It does not roll back migrations; future migrations must remain backward compatible. Deployments restart containers and may briefly interrupt requests. Keep old releases until rollback and backup checks pass.
+The CI SSH key is restricted to `.local/deploy-entry.sh`. It accepts only `deploy <SHA>`, fetches and verifies the head of `main`, then updates the checkout before running the current deployment script. GitHub uses environment `production`, secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_KNOWN_HOSTS`, and variable `DEPLOY_ENABLED`. Enable it only after the first manual start passes. New pushes do not cancel an active deployment.
 
-Native Stripe/PayPal/Mollie sandbox keys and provider verification are a separate integration step. No production payment configuration is included.
+`scripts/deploy.sh <SHA>` archives that commit, builds release-tagged images, backs up PostgreSQL, applies migrations, grants runtime access and waits for readiness and Horizon. It restores previous images on failure, or stops the public app if no previous release exists. Migrations are not reversed; changes must remain backward compatible. Container restarts may briefly interrupt requests.
+
+The backup service writes a daily dump and retains daily dumps for seven days. Pre-deploy dumps are kept separately. Review disk usage and prune old releases/pre-deploy dumps after rollback checks. Backups on the same VPS do not protect against loss of that server; arrange an external copy separately. Restore drills use a temporary database.
+
+After each deployment, check `https://tollgate.syslora.com/health`, secure cookies, CSRF, checkout/replay and demo inbox delivery through the public URL. Keep the deployment SHA with the validation result. Never run `docker compose down -v` on the VPS.
+
+Native Stripe/PayPal/Mollie adapters and controlled sandbox access remain a separate integration step. No real payments are enabled.

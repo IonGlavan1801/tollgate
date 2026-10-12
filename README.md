@@ -19,6 +19,8 @@ Sandbox integration is the next step: native adapters, provider-specific verific
 
 **Stack:** Laravel 13 · PHP 8.4 · Livewire 3 / Alpine · PostgreSQL 17 · Redis / Horizon · Docker · Playwright.
 
+**Demo:** [tollgate.syslora.com](https://tollgate.syslora.com). All payments remain simulated.
+
 ```sh
 bash scripts/setup.sh
 composer dev
@@ -36,4 +38,4 @@ docker compose --profile app up -d --wait
 
 Choose a scenario, inspect the event timeline and ledger, then use the virtual clock or recovery actions. Sessions expire after two hours. Tax fixtures and invoices have no fiscal validity. Stripe, PayPal and Mollie sandbox adapters are not connected; external webhook endpoints return 503.
 
-See [development](docs/DEVELOPMENT.md), [architecture](docs/ARCHITECTURE.md), [security](SECURITY.md), [tests](docs/TESTING.md) and [operations](docs/RUNBOOK.md). CI checks pushes to `main` and pull requests. VPS deployment remains disabled until its target and secrets are configured.
+See [development](docs/DEVELOPMENT.md), [architecture](docs/ARCHITECTURE.md), [security](SECURITY.md), [tests](docs/TESTING.md) and [operations](docs/RUNBOOK.md). CI checks pushes to `main` and pull requests. Verified pushes to `main` deploy to the Syslora demo.

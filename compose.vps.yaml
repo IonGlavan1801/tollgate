@@ -79,6 +79,8 @@ services:
     mem_limit: 128m
     logging: *logs
   web:
+    environment:
+      TRAEFIK_IP: ${TRAEFIK_IP:?Set TRAEFIK_IP}
     networks: [default, devpulse]
     labels:
       - traefik.enable=true

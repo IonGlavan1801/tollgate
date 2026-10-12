@@ -57,6 +57,7 @@ jobs:
       - run: vendor/bin/pint --test
       - run: vendor/bin/phpstan analyse --memory-limit=512M --no-progress
       - run: php artisan test --compact
+      - run: python3 tests/Fixtures/deploy_test.py
       - run: composer audit && npm audit --audit-level=high
       - run: php artisan migrate --seed --force
       - run: npx playwright install --with-deps chromium
@@ -79,6 +80,7 @@ jobs:
           BACKUP_DIR: /tmp/tollgate-backups
           BACKUP_UID: '1000'
           BACKUP_GID: '1000'
+          TRAEFIK_IP: '172.19.0.2'
         run: |
           cp .env.example .env
           docker compose -f compose.yaml -f compose.vps.yaml --profile app config --quiet

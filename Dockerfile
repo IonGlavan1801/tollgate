@@ -25,6 +25,6 @@ EXPOSE 9000
 CMD ["php-fpm"]
 
 FROM nginx:1.28-alpine AS web
-COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+COPY docker/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --chown=nginx:nginx --from=app /var/www/html/public /var/www/html/public
 RUN su nginx -s /bin/sh -c 'test -r /var/www/html/public/index.php'
