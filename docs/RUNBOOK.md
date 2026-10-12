@@ -13,6 +13,8 @@ Back up with `scripts/backup.sh`, store the dump outside the release directory a
 3. Configure a dedicated SSH deployment key and verified host key. Add GitHub environment `production`, secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_KEY`, `DEPLOY_KNOWN_HOSTS`, and repository variable `DEPLOY_ENABLED=true`. Protected environment approval is optional; enable it for manual promotion.
 4. Run staging, backup/restore and smoke checks before enabling the variable. A push to `main` then deploys only after both test and image jobs pass.
 
+Before promotion, confirm `/health`, a checkout/replay scenario, outbox delivery and Horizon on staging. Record the release SHA and backup location. After promotion, repeat those checks on the public HTTPS URL and verify secure cookies through the configured proxy. Run backup restoration against a disposable database; do not overwrite the active database as a smoke check.
+
 The deployment script locks concurrent deploys, archives the exact commit, builds release-tagged images, backs up PostgreSQL, applies migrations and waits for readiness. On failure it restores previous images when available. It does not roll back migrations; future migrations must remain backward compatible. Deployments restart containers and may briefly interrupt requests. Keep old releases until rollback and backup checks pass.
 
 Native Stripe/PayPal/Mollie sandbox keys and provider verification are a separate integration step. No production payment configuration is included.

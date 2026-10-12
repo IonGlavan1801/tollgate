@@ -21,4 +21,4 @@ docker compose --profile app up -d --wait
 
 Choose a scenario, inspect the event timeline and ledger, then use the virtual clock or recovery actions. Sessions expire after two hours. Tax fixtures and invoices have no fiscal validity. Stripe, PayPal and Mollie sandbox adapters are not connected; external webhook endpoints return 503.
 
-See [architecture](docs/ARCHITECTURE.md), [security](SECURITY.md), [tests](docs/TESTING.md) and [operations](docs/RUNBOOK.md). CI checks every push. VPS deployment remains disabled until its target and secrets are configured.
+See [development](docs/DEVELOPMENT.md), [architecture](docs/ARCHITECTURE.md), [security](SECURITY.md), [tests](docs/TESTING.md) and [operations](docs/RUNBOOK.md). CI checks pushes to `main` and pull requests. VPS deployment remains disabled until its target and secrets are configured.

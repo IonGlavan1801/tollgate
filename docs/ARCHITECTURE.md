@@ -2,6 +2,8 @@
 
 A modular monolith keeps the payment mutation, ledger posting and outbox write in one PostgreSQL transaction. `Domain` holds money, lifecycle rules and provider contracts; `Application` coordinates use cases; `Infrastructure` implements the simulator; HTTP and Livewire expose session-scoped actions.
 
+Splitting these writes across services would introduce partial failures without a useful deployment boundary for this lab. Redis carries jobs, while PostgreSQL remains the source of truth. Locking the session serializes its mutations and simplifies replay recovery; this favors isolation and correctness over throughput within one demo session.
+
 ```mermaid
 flowchart LR
     UI[Demo session] --> C[Checkout / scenario]
