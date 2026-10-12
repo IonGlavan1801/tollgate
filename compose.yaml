@@ -1,0 +1,88 @@
+name: tollgate
+services:
+  db:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-tollgate}
+      POSTGRES_USER: ${DB_USERNAME:-tollgate}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    ports: ["127.0.0.1:${DB_FORWARD_PORT:-5547}:5432"]
+    volumes: ["database:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  redis:
+    image: redis:7.4.6-alpine
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    ports: ["127.0.0.1:${REDIS_FORWARD_PORT:-6397}:6379"]
+    volumes: ["redis:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  mailpit:
+    image: axllent/mailpit:v1.27.8
+    ports: ["127.0.0.1:${MAIL_FORWARD_PORT:-1037}:1025", "127.0.0.1:${MAIL_UI_PORT:-8037}:8025"]
+    restart: unless-stopped
+  app:
+    profiles: [app]
+    build:
+      context: .
+      target: app
+    image: tollgate-app:${RELEASE_TAG:-local}
+    env_file: .env
+    environment: &app-env
+      DB_HOST: db
+      DB_PORT: 5432
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MAIL_HOST: mailpit
+      MAIL_PORT: 1025
+    volumes: ["storage:/var/www/html/storage"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+  worker:
+    profiles: [app]
+    image: tollgate-app:${RELEASE_TAG:-local}
+    command: ["php", "artisan", "horizon"]
+    env_file: .env
+    environment: *app-env
+    volumes: ["storage:/var/www/html/storage"]
+    depends_on: [app]
+    restart: unless-stopped
+  scheduler:
+    profiles: [app]
+    image: tollgate-app:${RELEASE_TAG:-local}
+    command: ["php", "artisan", "schedule:work"]
+    env_file: .env
+    environment: *app-env
+    volumes: ["storage:/var/www/html/storage"]
+    depends_on: [app]
+    restart: unless-stopped
+  web:
+    profiles: [app]
+    build:
+      context: .
+      target: web
+    image: tollgate-web:${RELEASE_TAG:-local}
+    ports: ["127.0.0.1:${WEB_PORT:-8127}:80"]
+    depends_on: [app]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+volumes:
+  database:
+  redis:
+  storage:
