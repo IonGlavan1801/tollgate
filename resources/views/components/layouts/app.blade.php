@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="utf-8">
+    <meta name="robots" content="noindex, nofollow">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description"
         content="Tollgate is a payment reliability lab. Explore webhook replay, subscription recovery and a double-entry ledger with isolated simulations.">

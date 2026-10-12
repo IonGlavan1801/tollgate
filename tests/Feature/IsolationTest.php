@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Application\DemoSessions;
 use App\Livewire\Lab;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Symfony\Component\HttpKernel\Exception\HttpException;
@@ -89,7 +90,18 @@ class IsolationTest extends LabTestCase
 
     public function test_security_headers_are_present(): void
     {
-        $this->get('/')->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff')->assertHeader('X-Frame-Options', 'DENY')->assertHeader('Referrer-Policy', 'no-referrer')->assertHeader('Cache-Control', 'no-store, private');
+        $this->get('/')->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff')->assertHeader('X-Frame-Options', 'DENY')->assertHeader('Referrer-Policy', 'no-referrer')->assertHeader('Cache-Control', 'no-store, private')->assertHeader('X-Robots-Tag', 'noindex, nofollow');
+    }
+
+    public function test_https_headers_are_accepted_only_from_the_configured_proxy(): void
+    {
+        TrustProxies::at(['172.19.0.2']);
+        try {
+            $this->withServerVariables(['REMOTE_ADDR' => '172.19.0.2', 'HTTP_X_FORWARDED_PROTO' => 'https', 'HTTP_X_FORWARDED_PORT' => '443'])->get('/')->assertHeader('Strict-Transport-Security', 'max-age=31536000');
+            $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.10', 'HTTP_X_FORWARDED_PROTO' => 'https', 'SERVER_PORT' => '80', 'HTTPS' => 'off'])->get('http://localhost/')->assertHeaderMissing('Strict-Transport-Security');
+        } finally {
+            TrustProxies::at([]);
+        }
     }
 
     public function test_session_creation_is_rate_limited(): void
