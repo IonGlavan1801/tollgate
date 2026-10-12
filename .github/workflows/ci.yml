@@ -1,0 +1,92 @@
+name: Checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: tollgate-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine
+        env:
+          POSTGRES_DB: tollgate_test
+          POSTGRES_USER: tollgate
+          POSTGRES_PASSWORD: ci-only-password
+        ports: [5432:5432]
+        options: --health-cmd "pg_isready -U tollgate" --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7.4.6-alpine
+        ports: [6379:6379]
+    env:
+      APP_ENV: testing
+      APP_DEBUG: 'false'
+      APP_URL: http://127.0.0.1:8127
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: tollgate_test
+      DB_USERNAME: tollgate
+      DB_PASSWORD: ci-only-password
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      REDIS_CLIENT: predis
+      CACHE_STORE: array
+      QUEUE_CONNECTION: redis
+      SESSION_DRIVER: database
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: shivammathur/setup-php@d52fc211a0436f8839a587b3b5b8efddab4744ea # v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_pgsql, bcmath, pcntl
+          coverage: none
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: cp .env.example .env && composer install --no-interaction --prefer-dist
+      - run: php artisan key:generate
+      - run: npm ci && npm run build
+      - run: npm run format:check
+      - run: vendor/bin/pint --test
+      - run: vendor/bin/phpstan analyse --memory-limit=512M --no-progress
+      - run: php artisan test --compact
+      - run: composer audit && npm audit --audit-level=high
+      - run: php artisan migrate --seed --force
+      - run: npx playwright install --with-deps chromium
+      - run: php artisan serve --host=127.0.0.1 --port=8127 > /tmp/tollgate-http.log 2>&1 &
+      - run: php artisan horizon > /tmp/tollgate-worker.log 2>&1 &
+      - run: php artisan schedule:work > /tmp/tollgate-scheduler.log 2>&1 &
+      - run: npx playwright test
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - run: docker build --target app -t tollgate-app:check . && docker build --target web -t tollgate-web:check .
+  deploy:
+    needs: [test, image]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Deploy verified commit
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9.-]+$ ]] && [[ "$DEPLOY_USER" =~ ^[a-zA-Z0-9_-]+$ ]]
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes "$DEPLOY_USER@$DEPLOY_HOST" "bash /srv/tollgate/repository/scripts/deploy.sh $RELEASE_SHA"

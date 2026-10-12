@@ -1,0 +1,20 @@
+# Testing
+
+```sh
+php artisan test
+DB_CONNECTION=pgsql DB_DATABASE=tollgate_test php artisan test
+vendor/bin/phpstan analyse --memory-limit=512M
+vendor/bin/pint --test
+npm run build
+npm run test:e2e
+```
+
+Create the disposable `tollgate_test` database first. Never point tests at the demo or production database. SQLite covers application behavior; PostgreSQL is required for deferred ledger constraints and multi-process concurrency tests. The PostgreSQL suite covers 100 duplicate deliveries, ten out-of-order flows, stale signatures, payload conflicts, timeout/SCA, refund bounds, dunning, token ownership, invoice concurrency, concurrent refunds and concurrent ingress.
+
+Playwright checks checkout, replay, refunds, plan confirmation, failed-payment recovery, SCA, reset, mobile layout, capability limits and VAT review against a running app, worker and scheduler.
+
+`php artisan lab:benchmark --deliveries=100` measures sequential, in-process simulated ingress with queue dispatch disabled. It includes durable commits and reports the workload and runtime. It is not an HTTP or provider latency benchmark. Session UI timing excludes commit and network time.
+
+One local PostgreSQL run: 100 deliveries, 99 duplicates, one payment, zero ledger imbalance; p50 7.047 ms, p95 9.108 ms, apply 31.661 ms (PHP 8.4.13, PostgreSQL 17, Docker Desktop, sequential workload). Results vary by machine and load.
+
+`bash scripts/backup.sh` creates a private dump. `bash scripts/restore-check.sh path/to/dump` restores into a temporary database, checks ledger balance and removes that database. This does not replace a production restore drill.
