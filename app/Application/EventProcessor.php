@@ -17,6 +17,11 @@ final class EventProcessor
     public function process(string $eventId): void
     {
         $initial = WebhookEvent::findOrFail($eventId);
+        if ($initial->environment === 'sandbox') {
+            app(SandboxWebhooks::class)->process($eventId);
+
+            return;
+        }
         DB::transaction(function () use ($initial) {
             $session = DemoSession::whereKey($initial->demo_session_id)->lockForUpdate()->firstOrFail();
             $order = Order::whereKey($initial->order_id)->lockForUpdate()->firstOrFail();

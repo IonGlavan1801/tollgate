@@ -1,6 +1,6 @@
 # Tollgate
 
-A payment reliability lab for webhook replay, subscription recovery and double-entry accounting. Every provider flow is an isolated simulation; no money is collected.
+A payment reliability lab for webhook replay, subscription recovery and double-entry accounting. The public simulator uses isolated fixtures; gated sessions can connect to Stripe, PayPal and Mollie test APIs. No real money is collected.
 
 ## Problems the lab explores
 
@@ -15,11 +15,11 @@ A payment reliability lab for webhook replay, subscription recovery and double-e
 
 The lifecycle is explicit: order → checkout → pending or action required → confirmed payment → active subscription. A browser redirect alone is not payment confirmation. Refunds, disputes and later failures have separate transitions and accounting entries.
 
-Sandbox integration is the next step: native adapters, provider-specific verification, external object mapping and API reconciliation when a payment succeeds but its notification is missing. These are not implemented yet; the current HMAC and recovery scenarios are internal fixtures. In that integration, access must follow a verified provider result matched to the expected order, amount and currency.
+Native sandbox adapters provide provider-specific webhook verification, external object mapping, durable idempotent operations and API reconciliation. They are disabled until test credentials and a sandbox access code are configured. Browser redirects never confirm payment. Simulator HMAC, virtual time and failure injection remain separate from sandbox accounting. See the [architecture](docs/ARCHITECTURE.md) and [sandbox setup](docs/RUNBOOK.md#sandbox-setup).
 
 **Stack:** Laravel 13 · PHP 8.4 · Livewire 3 / Alpine · PostgreSQL 17 · Redis / Horizon · Docker · Playwright.
 
-**Demo:** [tollgate.syslora.com](https://tollgate.syslora.com). All payments remain simulated.
+**Demo:** [tollgate.syslora.com](https://tollgate.syslora.com). Provider sandbox activation is separately configured; no real payments are enabled.
 
 ```sh
 bash scripts/setup.sh
@@ -36,6 +36,6 @@ docker compose --profile app run --rm app php artisan migrate --seed
 docker compose --profile app up -d --wait
 ```
 
-Choose a scenario, inspect the event timeline and ledger, then use the virtual clock or recovery actions. Sessions expire after two hours. Tax fixtures and invoices have no fiscal validity. Stripe, PayPal and Mollie sandbox adapters are not connected; external webhook endpoints return 503.
+Choose a scenario, inspect the event timeline and ledger, then use the virtual clock or recovery actions. Sessions expire after two hours. Tax fixtures and invoices have no fiscal validity. Sandbox sessions last seven days by default and require an access code. External webhook endpoints return 503 while sandbox integration is disabled.
 
 See [development](docs/DEVELOPMENT.md), [architecture](docs/ARCHITECTURE.md), [security](SECURITY.md), [tests](docs/TESTING.md) and [operations](docs/RUNBOOK.md). CI checks pushes to `main` and pull requests. Verified pushes to `main` deploy to the Syslora demo.

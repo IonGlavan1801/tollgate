@@ -3,7 +3,7 @@
     <header class="topbar">
         <a class="brand" href="{{ route('lab') }}"><span class="brand-icon">T</span> tollgate<span
                 class="brand-divider">/</span><span class="brand-detail">payment reliability lab</span></a>
-        <div class="top-actions"><span class="status-dot"></span><span class="mode">SIMULATED</span><span
+        <div class="top-actions"><span class="status-dot"></span><span class="mode">{{ $sandbox ? 'SANDBOX' : 'SIMULATED' }}</span><span
                 class="local-tag">No real payments</span></div>
     </header>
     @if (!$demo)
@@ -14,9 +14,17 @@
                     <h1>Payments fail.<br>Systems <em>shouldn’t.</em></h1>
                     <p class="hero-copy">A hands-on lab for the moments between checkout and certainty. Replay webhooks,
                         break a payment flow, and watch the system recover.</p>
-                    <button class="button primary big" wire:click="launch" wire:loading.attr="disabled"
+                    @if (config('lab.sandbox_enabled'))
+                        <form class="sandbox-access" wire:submit="launchSandbox">
+                            <label for="sandbox-code">Sandbox access code</label>
+                            <input id="sandbox-code" type="password" wire:model="sandboxCode" autocomplete="off" maxlength="200" required>
+                            <button class="button primary big" type="submit" wire:loading.attr="disabled" data-testid="launch-sandbox">Launch sandbox <span aria-hidden="true">↗</span></button>
+                        </form>
+                        <p class="quiet">Real Stripe, PayPal and Mollie test APIs. Approve payments on provider checkout pages.</p>
+                    @endif
+                    <button class="button {{ config('lab.sandbox_enabled') ? 'subtle' : 'primary big' }}" wire:click="launch" wire:loading.attr="disabled"
                         data-testid="launch">Launch demo <span aria-hidden="true">↗</span></button>
-                    <p class="quiet">An isolated session. Synthetic data. No account required.</p>
+                    <p class="quiet">Controlled simulator for failure injection, virtual time and VIES fixtures.</p>
                 </div>
                 <div class="flow-card" aria-label="Webhook processing architecture">
                     <div class="panel-head"><span class="mono">THE RELIABILITY LOOP</span><span
@@ -44,7 +52,7 @@
                 </article>
                 <article><span class="feature-index">02 / BILLING</span>
                     <h2>A lifecycle you can inspect.</h2>
-                    <p>Trials, proration, failed payments, recovery and cancellation, with a virtual clock.</p>
+                    <p>Checkout, proration, failed payments, recovery and cancellation. Virtual time is available in the controlled simulator.</p>
                 </article>
                 <article><span class="feature-index">03 / ACCOUNTING</span>
                     <h2>Both sides of every change.</h2>
@@ -52,8 +60,7 @@
                 </article>
             </div>
             <div class="landing-note"><span class="chip">LAB NOTES</span>
-                <p>All provider flows are simulated. Sandbox accounts are not connected. Tax examples use synthetic
-                    fixtures; invoices are demonstration records.</p>
+                <p>The public simulator uses synthetic data. Gated sandbox sessions use provider test APIs when configured. Tax fixtures and invoices are demonstration records.</p>
             </div>
         </main>
     @else
@@ -62,12 +69,12 @@
                 <div>
                     <div class="eyebrow">YOUR ISOLATED WORKSPACE</div>
                     <h1>Break the flow.<span> Follow the recovery.</span></h1>
-                </div><button class="button subtle" wire:click="launch" wire:loading.attr="disabled"
-                    data-testid="reset">Reset session ↻</button>
+                </div><button class="button subtle" wire:click="{{ $sandbox ? 'leaveSandbox' : 'launch' }}" wire:loading.attr="disabled"
+                    data-testid="reset">{{ $sandbox ? 'End sandbox session' : 'Reset session ↻' }}</button>
             </div>
             <div class="session-strip"><span>SESSION <b>{{ substr($demo->id, 0, 8) }}</b></span><span>EXPIRES
-                    <b>{{ $demo->expires_at->format('H:i') }} UTC</b></span><span>VIRTUAL CLOCK
-                    <b>{{ $demo->virtual_now->format('M d, H:i') }} UTC</b></span></div>
+                    <b>{{ $demo->expires_at->format('M d, H:i') }} UTC</b></span>@if (!$sandbox)<span>VIRTUAL CLOCK
+                    <b>{{ $demo->virtual_now->format('M d, H:i') }} UTC</b></span>@endif</div>
             <div class="metric-grid">
                 <article><span>Deliveries received</span><strong
                         data-testid="delivery-count">{{ $stats['deliveries'] }}</strong><small>Persisted delivery
@@ -89,14 +96,37 @@
             <div class="lab-grid">
                 <aside class="scenario-panel panel">
                     <div class="panel-head">
-                        <h2>Failure scenarios</h2><span class="mono muted">01—08</span>
+                        <h2>{{ $sandbox ? 'Sandbox checkout' : 'Failure scenarios' }}</h2><span class="mono muted">{{ $sandbox ? 'TEST APIs' : '01—08' }}</span>
                     </div>
                     <div class="provider-picker"><label for="provider">Provider for new orders</label><select
                             id="provider" wire:model.live="provider">
-                            <option value="stripe">Stripe · simulator</option>
-                            <option value="paypal">PayPal · simulator</option>
-                            <option value="mollie">Mollie · simulator</option>
+                            <option value="stripe">Stripe · {{ $sandbox ? 'sandbox' : 'simulator' }}</option>
+                            <option value="paypal">PayPal · {{ $sandbox ? 'sandbox' : 'simulator' }}</option>
+                            <option value="mollie">Mollie · {{ $sandbox ? 'sandbox' : 'simulator' }}</option>
                         </select><small>Existing orders stay with their original provider.</small></div>
+                    @if (!$sandbox && config('lab.sandbox_enabled'))
+                        <details class="capabilities" wire:ignore.self>
+                            <summary>Switch to sandbox</summary>
+                            <form class="sandbox-access" wire:submit="launchSandbox">
+                                <label for="sandbox-code">Sandbox access code</label>
+                                <input id="sandbox-code" type="password" wire:model="sandboxCode" autocomplete="off" maxlength="200" required>
+                                <button class="button" type="submit" wire:loading.attr="disabled" data-testid="launch-sandbox">Launch sandbox</button>
+                            </form>
+                        </details>
+                    @endif
+                    @if ($sandbox)
+                        <div class="provider-picker sandbox-guidance">
+                            <label for="sandbox-plan">Test plan</label>
+                            <select id="sandbox-plan" wire:model="sandboxPriceId">
+                                @foreach ($sandboxPlans as $plan)
+                                    <option value="{{ $plan->id }}">{{ $plan->name }} · {{ \App\Domain\Billing\Money::format($plan->amount_minor) }} / month</option>
+                                @endforeach
+                            </select>
+                            <button class="button primary" wire:click="createSandboxOrder" wire:loading.attr="disabled" data-testid="create-sandbox-order">Create test order</button>
+                            <p>Complete checkout on the provider test page. Reconcile checks authoritative provider state.</p>
+                            <p>Time travel, arbitrary dispute outcomes and failure injection are available in the simulator.</p>
+                        </div>
+                    @else
                     <div class="scenario-list">
                         @foreach (\App\Application\Scenarios::LABELS as $key => [$letter, $name, $description])
                             <button class="scenario {{ $scenario === $key ? 'selected' : '' }}"
@@ -106,11 +136,12 @@
                                     class="scenario-arrow">↗</span></button>
                         @endforeach
                     </div>
+                    @endif
                     <details class="capabilities">
                         <summary>Provider capabilities</summary>
                         <table>
                             <tbody>
-                                @foreach (\App\Domain\Providers\CapabilityMatrix::for(in_array($provider, ['stripe', 'paypal', 'mollie']) ? $provider : 'stripe') as $feature => $capability)
+                                @foreach (($sandbox ? \App\Domain\Providers\CapabilityMatrix::sandbox(in_array($provider, ['stripe', 'paypal', 'mollie']) ? $provider : 'stripe') : \App\Domain\Providers\CapabilityMatrix::for(in_array($provider, ['stripe', 'paypal', 'mollie']) ? $provider : 'stripe')) as $feature => $capability)
                                     <tr>
                                         <th>{{ $feature }}</th>
                                         <td>{{ $capability }}</td>
@@ -118,18 +149,18 @@
                                 @endforeach
                             </tbody>
                         </table>
-                        <p>These labels describe this lab. They do not certify a live provider integration.</p>
+                        <p>Capabilities describe the selected lab mode. Sandbox availability also depends on the merchant account configuration.</p>
                     </details>
                 </aside>
                 <div class="observation">
                     <section class="panel current-order">
                         <div class="panel-head">
-                            <h2>Payment flow</h2><span class="chip">SIMULATED</span>
+                            <h2>Payment flow</h2><span class="chip">{{ $sandbox ? 'SANDBOX' : 'SIMULATED' }}</span>
                         </div>
                         @if (!$selected)
                             <div class="empty-state">
                                 <div class="empty-symbol">↳</div>
-                                <h3>Choose a scenario to begin.</h3>
+                                <h3>{{ $sandbox ? 'Create a test order to begin.' : 'Choose a scenario to begin.' }}</h3>
                                 <p>The order, subscription and every delivery will appear here.</p>
                             </div>
                         @else
@@ -137,7 +168,7 @@
                                 <div><span class="mono muted">ORDER {{ substr($selected->id, 0, 8) }}</span>
                                     <h3>{{ \App\Domain\Billing\Money::format($selected->amount_minor) }} <span>initial
                                             order</span></h3><span class="muted">{{ ucfirst($selected->provider) }}
-                                        simulator</span>
+                                        {{ $sandbox ? 'sandbox' : 'simulator' }}</span>
                                     @if ($subPrice)
                                         <p class="quiet">{{ $subPrice->name }} ·
                                             {{ \App\Domain\Billing\Money::format($subPrice->amount_minor) }} / month ·
@@ -158,6 +189,34 @@
                                     class="{{ $sub ? 'done' : '' }}">subscription</span><span>→</span><span
                                     class="{{ $payment ? 'done' : '' }}">ledger</span></div>
                             <div class="flow-actions">
+                                @if ($sandbox)
+                                    @if ($selected->status !== 'paid' && (!$sub || $sub->status === 'trialing'))
+                                        <form method="POST" action="{{ route('sandbox.checkout', ['order' => $selected->id]) }}">
+                                            @csrf
+                                            <button class="button primary" type="submit" data-testid="sandbox-checkout">Open provider checkout</button>
+                                        </form>
+                                    @endif
+                                    <button class="button" wire:click="recover" wire:loading.attr="disabled" data-testid="sandbox-reconcile">Reconcile provider state</button>
+                                    @if ($payment)
+                                        <button class="button" wire:click="refund" wire:loading.attr="disabled" data-testid="refund">Refund 50% / replay</button>
+                                    @endif
+                                    @if ($sub && $sub->status === 'active')
+                                        @if ($sub->provider === 'stripe')
+                                            <button class="button" wire:click="previewUpgrade" wire:loading.attr="disabled" data-testid="preview">Preview Team plan</button>
+                                        @endif
+                                        @if ($sub->provider !== 'mollie')
+                                            <button class="button" wire:click="lifecycle('pause')" wire:loading.attr="disabled">{{ $sub->provider === 'stripe' ? 'Pause collection' : 'Pause' }}</button>
+                                        @endif
+                                    @endif
+                                    @if ($sub && $sub->status === 'paused')
+                                        <button class="button" wire:click="lifecycle('resume')" wire:loading.attr="disabled">Resume</button>
+                                    @endif
+                                    @if ($sub && $sub->status !== 'canceled')
+                                        <button class="button" wire:click="lifecycle('cancel_end')" wire:loading.attr="disabled">Cancel at period end</button>
+                                        <button class="button" wire:click="lifecycle('cancel_now')" wire:loading.attr="disabled">Cancel now</button>
+                                        @if ($sub->cancel_at_period_end)<span class="quiet">Cancellation scheduled{{ $sub->provider === 'stripe' ? ' at provider' : ' by lab scheduler' }}.</span>@endif
+                                    @endif
+                                @else
                                 @if (in_array($selected->status, ['requires_action', 'pending_reconciliation', 'failed']))
                                     <button class="button primary" wire:click="recover" wire:loading.attr="disabled"
                                         data-testid="recover">{{ $selected->status === 'requires_action' ? 'Confirm test challenge' : 'Confirm recovered payment' }}</button>
@@ -202,13 +261,30 @@
                                         wire:loading.attr="disabled">Advance to period end</button><span
                                         class="quiet">Cancellation scheduled.</span>
                                 @endif
+                                @endif
                             </div>
+                            @if ($sandbox)
+                                @foreach ($sandboxRefunds as $refundRecord)
+                                    <div class="document-row"><span>Refund · {{ \App\Domain\Billing\Money::format($refundRecord->amount_minor) }}</span><b>{{ $refundRecord->status }}</b></div>
+                                @endforeach
+                                @foreach ($sandboxDisputes as $disputeRecord)
+                                    <div class="document-row"><span>Dispute · {{ \App\Domain\Billing\Money::format($disputeRecord->amount_minor) }}</span><b>{{ $disputeRecord->status }}</b></div>
+                                @endforeach
+                                @foreach ($sandboxOperations as $operation)
+                                    <div class="inbox-row"><span>{{ $operation->action }} · {{ $operation->status }}</span>
+                                        @if (in_array($operation->status, ['uncertain', 'running']))
+                                            <button class="button" wire:click="retrySandboxOperation('{{ $operation->id }}')" wire:loading.attr="disabled">Retry original operation</button>
+                                        @elseif ($operation->status === 'review')
+                                            <span class="quiet">Operator review required; automatic retry blocked.</span>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            @endif
                             @if ($preview)
                                 <div class="preview-box">
                                     <div><strong>Confirm the plan change</strong>
                                         <p>{{ \App\Domain\Billing\Money::format($preview['proration_minor']) }}
-                                            {{ $preview['proration_minor'] >= 0 ? 'charge' : 'credit' }} · demo
-                                            calculator · expires in 5 minutes</p>
+                                            {{ $preview['proration_minor'] >= 0 ? 'charge' : 'credit' }} · {{ $sandbox ? 'provider invoice preview' : 'demo calculator' }} · expires in 5 minutes</p>
                                     </div><button class="button primary" wire:click="confirmUpgrade"
                                         wire:loading.attr="disabled" data-testid="confirm-change">Confirm
                                         change</button>
@@ -323,9 +399,8 @@
                     @endif
                 </div>
             </div>
-            <div class="landing-note"><span class="chip">SIMULATION BOUNDARY</span>
-                <p>No provider accounts are connected. No card details are accepted. Metrics come from this session;
-                    inbox timing is not a network latency benchmark. Tax and invoice outputs are demonstrations.</p>
+            <div class="landing-note"><span class="chip">{{ $sandbox ? 'SANDBOX BOUNDARY' : 'SIMULATION BOUNDARY' }}</span>
+                <p>{{ $sandbox ? 'Provider test APIs are connected when configured. Enter test payment details only on the provider checkout page.' : 'This session uses isolated simulations.' }} Metrics come from this session; inbox timing is not a network latency benchmark. Tax and invoice outputs are demonstrations.</p>
             </div>
         </main>
     @endif

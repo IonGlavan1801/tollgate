@@ -60,6 +60,7 @@ final class WebhookInbox
 
     public function simulated(Order $order, string $type, ?string $externalId = null, bool $dispatch = true): array
     {
+        abort_unless($order->environment === 'simulated', 403, 'Sandbox orders cannot receive simulated confirmations.');
         $body = json_encode(['id' => $externalId ?? 'sim_evt_'.Str::uuid(), 'order_id' => $order->id, 'type' => $type, 'amount_minor' => $order->amount_minor, 'currency' => $order->currency], JSON_THROW_ON_ERROR);
 
         return $this->ingest($order->demo_session_id, $order->provider, $body, (new SimulatedProvider($order->provider))->sign($body), $dispatch);

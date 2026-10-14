@@ -17,7 +17,8 @@ class AppServiceProvider extends ServiceProvider
     {
         RateLimiter::for('demo-create', fn (Request $request) => Limit::perMinute(6)->by($request->ip()));
         RateLimiter::for('lab-api', fn (Request $request) => [Limit::perMinute(120)->by('ip:'.$request->ip()), Limit::perMinute(60)->by('session:'.$request->attributes->get('demo_session_id'))]);
-        RateLimiter::for('webhook', fn (Request $request) => Limit::perMinute(120)->by($request->ip()));
+        RateLimiter::for('webhook', fn (Request $request) => [Limit::perMinute(120)->by($request->ip()), Limit::perMinute(300)->by('all-webhooks')]);
+        RateLimiter::for('sandbox-api', fn (Request $request) => [Limit::perMinute(10)->by('sandbox-ip:'.$request->ip()), Limit::perMinute(10)->by('sandbox-session:'.(string) $request->session()->get('lab_session'))]);
         RateLimiter::for('livewire', fn (Request $request) => Limit::perMinute(90)->by($request->ip()));
         Livewire::setUpdateRoute(fn ($handle) => Route::post('/livewire/update', $handle)->middleware(['web', 'throttle:livewire']));
     }

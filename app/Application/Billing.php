@@ -20,7 +20,8 @@ final class Billing
         CapabilityMatrix::for($provider);
 
         return DB::transaction(function () use ($sessionId, $priceId, $provider, $key) {
-            app(DemoSessions::class)->requireActive($sessionId, true);
+            $session = app(DemoSessions::class)->requireActive($sessionId, true);
+            abort_unless($session->environment === 'simulated', 403, 'Simulator action is unavailable in sandbox.');
             $hash = hash('sha256', json_encode([$priceId, $provider], JSON_THROW_ON_ERROR));
             $existing = $this->idempotent($sessionId, 'order', $key, $hash);
             if ($existing) {
@@ -44,12 +45,12 @@ final class Billing
 
     public function order(string $sessionId, string $id): Order
     {
-        return Order::whereKey($id)->where('demo_session_id', $sessionId)->firstOrFail();
+        return Order::whereKey($id)->where('demo_session_id', $sessionId)->where('environment', 'simulated')->firstOrFail();
     }
 
     public function subscription(string $sessionId, string $id): BillingSubscription
     {
-        return BillingSubscription::whereKey($id)->where('demo_session_id', $sessionId)->firstOrFail();
+        return BillingSubscription::whereKey($id)->where('demo_session_id', $sessionId)->where('environment', 'simulated')->firstOrFail();
     }
 
     public function checkout(string $sessionId, string $orderId, string $outcome, string $key): Order
@@ -57,7 +58,8 @@ final class Billing
         abort_unless(in_array($outcome, ['succeeded', 'failed', 'requires_action', 'timeout'], true), 422, 'Invalid checkout outcome.');
 
         return DB::transaction(function () use ($sessionId, $orderId, $outcome, $key) {
-            app(DemoSessions::class)->requireActive($sessionId, true);
+            $session = app(DemoSessions::class)->requireActive($sessionId, true);
+            abort_unless($session->environment === 'simulated', 403, 'Simulator action is unavailable in sandbox.');
             $order = $this->order($sessionId, $orderId);
             $hash = hash('sha256', $orderId.':'.$outcome);
             if ($this->idempotent($sessionId, 'checkout', $key, $hash)) {
@@ -83,7 +85,8 @@ final class Billing
     public function refund(string $sessionId, string $paymentId, int $amount, string $key): string
     {
         return DB::transaction(function () use ($sessionId, $paymentId, $amount, $key) {
-            app(DemoSessions::class)->requireActive($sessionId, true);
+            $session = app(DemoSessions::class)->requireActive($sessionId, true);
+            abort_unless($session->environment === 'simulated', 403, 'Simulator action is unavailable in sandbox.');
             $payment = Payment::whereKey($paymentId)->whereIn('order_id', Order::where('demo_session_id', $sessionId)->select('id'))->lockForUpdate()->firstOrFail();
             $hash = hash('sha256', $paymentId.':'.$amount);
             $existing = $this->idempotent($sessionId, 'refund', $key, $hash);
@@ -112,6 +115,7 @@ final class Billing
     {
         return DB::transaction(function () use ($sessionId, $subscriptionId, $priceId) {
             $session = app(DemoSessions::class)->requireActive($sessionId, true);
+            abort_unless($session->environment === 'simulated', 403, 'Simulator action is unavailable in sandbox.');
             $sub = $this->subscription($sessionId, $subscriptionId);
             abort_unless($sub->status === 'active', 409, 'Only active subscriptions can change plan.');
             abort_if(CapabilityMatrix::for($sub->provider)['proration'] === 'unavailable', 422, 'Proration is unavailable for this provider.');
@@ -132,7 +136,8 @@ final class Billing
     public function confirmChange(string $sessionId, string $subscriptionId, string $previewId): void
     {
         DB::transaction(function () use ($sessionId, $subscriptionId, $previewId) {
-            app(DemoSessions::class)->requireActive($sessionId, true);
+            $session = app(DemoSessions::class)->requireActive($sessionId, true);
+            abort_unless($session->environment === 'simulated', 403, 'Simulator action is unavailable in sandbox.');
             $sub = $this->subscription($sessionId, $subscriptionId);
             $preview = DB::table('subscription_changes')->where('id', $previewId)->where('subscription_id', $sub->id)->lockForUpdate()->first();
             abort_unless($preview !== null, 404);
@@ -156,7 +161,8 @@ final class Billing
     public function lifecycle(string $sessionId, string $subscriptionId, string $action): void
     {
         DB::transaction(function () use ($sessionId, $subscriptionId, $action) {
-            app(DemoSessions::class)->requireActive($sessionId, true);
+            $session = app(DemoSessions::class)->requireActive($sessionId, true);
+            abort_unless($session->environment === 'simulated', 403, 'Simulator action is unavailable in sandbox.');
             $sub = $this->subscription($sessionId, $subscriptionId);
             abort_unless(in_array($action, ['pause', 'resume', 'cancel_now', 'cancel_end'], true), 422);
             if ($action === 'cancel_end') {
@@ -180,7 +186,8 @@ final class Billing
     public function dispute(string $sessionId, string $paymentId, string $action): void
     {
         DB::transaction(function () use ($sessionId, $paymentId, $action) {
-            app(DemoSessions::class)->requireActive($sessionId, true);
+            $session = app(DemoSessions::class)->requireActive($sessionId, true);
+            abort_unless($session->environment === 'simulated', 403, 'Simulator action is unavailable in sandbox.');
             $payment = Payment::whereKey($paymentId)->whereIn('order_id', Order::where('demo_session_id', $sessionId)->select('id'))->lockForUpdate()->firstOrFail();
             abort_unless(in_array($action, ['open', 'won', 'lost'], true), 422);
             $dispute = DB::table('disputes')->where('payment_id', $paymentId)->lockForUpdate()->first();
@@ -212,6 +219,7 @@ final class Billing
         abort_if($hours < 1 || $hours > 720, 422);
         DB::transaction(function () use ($sessionId, $hours) {
             $session = app(DemoSessions::class)->requireActive($sessionId, true);
+            abort_unless($session->environment === 'simulated', 403, 'The virtual clock is available in simulator only.');
             $clock = $session->virtual_now->addHours($hours);
             $session->update(['virtual_now' => $clock]);
             $cases = DB::table('dunning_cases')->whereIn('subscription_id', BillingSubscription::where('demo_session_id', $sessionId)->select('id'))->where('status', 'open')->get();
@@ -251,7 +259,8 @@ final class Billing
     {
         abort_unless(in_array($status, ['sample_valid', 'sample_invalid', 'unavailable'], true), 422);
         DB::transaction(function () use ($sessionId, $orderId, $status) {
-            app(DemoSessions::class)->requireActive($sessionId, true);
+            $session = app(DemoSessions::class)->requireActive($sessionId, true);
+            abort_unless($session->environment === 'simulated', 403, 'Simulator action is unavailable in sandbox.');
             $order = $this->order($sessionId, $orderId);
             Records::insert('vat_validations', ['demo_session_id' => $sessionId, 'status' => $status === 'unavailable' ? 'pending_review' : $status, 'source' => 'simulated VIES fixture', 'checked_at' => now()]);
             Records::insert('tax_evidence', ['order_id' => $order->id, 'country' => 'DE', 'rate_bps' => 2000, 'tax_minor' => Money::prorate($order->amount_minor, 2000, 10000), 'decision' => 'pending_review', 'source' => 'synthetic 20% fixture; no fiscal determination']);

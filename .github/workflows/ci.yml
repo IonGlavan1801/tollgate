@@ -61,10 +61,10 @@ jobs:
       - run: composer audit && npm audit --audit-level=high
       - run: php artisan migrate --seed --force
       - run: npx playwright install --with-deps chromium
-      - run: APP_ENV=local CACHE_STORE=redis php artisan serve --host=127.0.0.1 --port=8127 > /tmp/tollgate-http.log 2>&1 &
+      - run: APP_ENV=local CACHE_STORE=redis SANDBOX_ENABLED=true SANDBOX_ACCESS_CODE=ci-demo-sandbox-code php artisan serve --host=127.0.0.1 --port=8127 --no-reload > /tmp/tollgate-http.log 2>&1 &
       - run: APP_ENV=local CACHE_STORE=redis php artisan horizon > /tmp/tollgate-worker.log 2>&1 &
       - run: APP_ENV=local CACHE_STORE=redis php artisan schedule:work > /tmp/tollgate-scheduler.log 2>&1 &
-      - run: npx playwright test
+      - run: TEST_SANDBOX_CODE=ci-demo-sandbox-code npx playwright test
   image:
     concurrency:
       group: tollgate-images-${{ github.ref }}

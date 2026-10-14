@@ -14,7 +14,7 @@ class ProcessWebhook implements ShouldQueue
 
     public int $tries = 6;
 
-    public int $timeout = 20;
+    public int $timeout = 60;
 
     public function __construct(public string $eventId, public bool $crashAfterCommit = false) {}
 

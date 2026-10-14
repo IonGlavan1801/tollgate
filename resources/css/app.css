@@ -31,7 +31,8 @@ body {
     font: 14px/1.55 var(--font);
 }
 button,
-select {
+select,
+.sandbox-access input {
     font: inherit;
 }
 button,
@@ -542,6 +543,30 @@ select {
 }
 summary {
     list-style-position: inside;
+}
+.sandbox-guidance .button {
+    margin-top: 12px;
+}
+.sandbox-guidance p {
+    margin-top: 12px;
+    color: var(--muted);
+    font-size: 11px;
+    line-height: 1.6;
+}
+.sandbox-access {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+}
+.sandbox-access label {
+    color: var(--text);
+}
+.sandbox-access input {
+    min-width: 0;
+}
+.sandbox-access input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
 }
 .capabilities table {
     width: 100%;

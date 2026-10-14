@@ -15,8 +15,8 @@ Artisan::command('lab:recover', function () {
 })->purpose('Recover durable inbox events and deliver demo mail');
 
 Artisan::command('lab:expire', function () {
-    $count = DemoSession::whereNull('revoked_at')->where('expires_at', '<=', now())->update(['revoked_at' => now()]);
-    $expired = DemoSession::where('expires_at', '<', now()->subDay())->pluck('id');
+    $count = DemoSession::where('environment', 'simulated')->whereNull('revoked_at')->where('expires_at', '<=', now())->update(['revoked_at' => now()]);
+    $expired = DemoSession::where('environment', 'simulated')->where('expires_at', '<', now()->subDay())->pluck('id');
     DB::table('webhook_events')->whereIn('demo_session_id', $expired)->whereNotIn('status', ['applied', 'ignored_stale', 'rejected', 'dead'])->update(['status' => 'rejected']);
     DB::table('webhook_events')->whereIn('demo_session_id', $expired)->update(['payload' => '{}']);
     DB::table('demo_mail')->whereIn('demo_session_id', $expired)->delete();
@@ -26,3 +26,5 @@ Artisan::command('lab:expire', function () {
 
 Schedule::command('lab:recover')->everyMinute()->withoutOverlapping();
 Schedule::command('lab:expire')->hourly()->withoutOverlapping();
+
+Schedule::command('sandbox:maintain --limit=20')->everyMinute()->withoutOverlapping(10);

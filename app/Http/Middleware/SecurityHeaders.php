@@ -14,7 +14,7 @@ class SecurityHeaders
         $nonce = base64_encode(random_bytes(18));
         $request->attributes->set('csp_nonce', $nonce);
         $response = $next($request);
-        $response->headers->set('Content-Security-Policy', "default-src 'self'; script-src 'self' 'nonce-{$nonce}' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'");
+        $response->headers->set('Content-Security-Policy', "default-src 'self'; script-src 'self' 'nonce-{$nonce}' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://checkout.stripe.com https://www.sandbox.paypal.com https://sandbox.paypal.com https://www.mollie.com https://mollie.com https://checkout.mollie.com; object-src 'none'");
         $response->headers->set('X-Content-Type-Options', 'nosniff');
         $response->headers->set('X-Robots-Tag', 'noindex, nofollow');
         $response->headers->set('X-Frame-Options', 'DENY');

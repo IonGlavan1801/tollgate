@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -14,6 +15,10 @@ use Illuminate\Database\Eloquent\Model;
  * @property string $currency
  * @property string $status
  * @property int $version
+ * @property int $snapshot_version
+ * @property CarbonImmutable|null $reconciled_at
+ * @property CarbonImmutable|null $reconciliation_attempted_at
+ * @property CarbonImmutable|null $cleanup_completed_at
  * @property string $correlation_id
  */
 class Order extends Model
@@ -30,6 +35,6 @@ class Order extends Model
 
     protected function casts(): array
     {
-        return ['amount_minor' => 'integer', 'version' => 'integer'];
+        return ['amount_minor' => 'integer', 'version' => 'integer', 'snapshot_version' => 'integer', 'reconciled_at' => 'immutable_datetime', 'reconciliation_attempted_at' => 'immutable_datetime', 'cleanup_completed_at' => 'immutable_datetime'];
     }
 }

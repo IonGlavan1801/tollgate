@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * @property string $id
+ * @property string $environment
  * @property string $token_hash
  * @property CarbonImmutable $expires_at
  * @property CarbonImmutable|null $revoked_at
