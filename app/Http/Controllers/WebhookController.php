@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Application\SandboxWebhooks;
+use App\Exceptions\SandboxRejected;
 use App\Exceptions\SandboxUnavailable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,7 +18,7 @@ class WebhookController extends Controller
         abort_unless(config('lab.sandbox_enabled'), 503, 'Sandbox webhooks are disabled.');
         try {
             $result = app(SandboxWebhooks::class)->ingest($provider, $request);
-        } catch (SandboxUnavailable|\App\Exceptions\SandboxRejected) {
+        } catch (SandboxUnavailable|SandboxRejected) {
             return response()->json(['error' => 'Provider verification is unavailable. Retry later.'], 503);
         }
 
