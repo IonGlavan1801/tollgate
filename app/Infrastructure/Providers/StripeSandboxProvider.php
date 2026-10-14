@@ -25,6 +25,7 @@ final class StripeSandboxProvider implements SandboxProvider
         if ($action === 'checkout') {
             $result = $this->http->request('stripe', 'POST', '/checkout/sessions', [
                 'mode' => 'subscription', 'client_reference_id' => $order->id,
+                'adaptive_pricing' => ['enabled' => 'false'],
                 'success_url' => route('sandbox.return', ['order' => $order->id]),
                 'cancel_url' => route('sandbox.return', ['order' => $order->id]),
                 'line_items' => [['price' => $this->catalog->price('stripe', $order->price_id), 'quantity' => 1]],

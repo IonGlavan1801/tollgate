@@ -26,7 +26,7 @@ class SandboxPaymentsTest extends SandboxTestCase
         $first = $billing->checkout($order->demo_session_id, $order->id);
         $this->assertSame($first, $billing->checkout($order->demo_session_id, $order->id));
         Http::assertSentCount(1);
-        Http::assertSent(fn ($request) => $request['mode'] === 'subscription' && $request['client_reference_id'] === $order->id && $request->hasHeader('Idempotency-Key') && $request->hasHeader('Stripe-Version', ApiVersion::CURRENT));
+        Http::assertSent(fn ($request) => $request['mode'] === 'subscription' && $request['client_reference_id'] === $order->id && $request['adaptive_pricing']['enabled'] === 'false' && $request->hasHeader('Idempotency-Key') && $request->hasHeader('Stripe-Version', ApiVersion::CURRENT));
         $this->assertDatabaseCount('checkout_attempts', 1);
         $this->assertDatabaseCount('payments', 0);
     }

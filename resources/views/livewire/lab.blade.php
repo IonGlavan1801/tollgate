@@ -193,7 +193,7 @@
                                     @if ($selected->status !== 'paid' && (!$sub || $sub->status === 'trialing'))
                                         <form method="POST" action="{{ route('sandbox.checkout', ['order' => $selected->id]) }}">
                                             @csrf
-                                            <button class="button primary" type="submit" data-testid="sandbox-checkout">Open provider checkout</button>
+                                            <button class="button primary" type="submit" wire:loading.attr="disabled" data-testid="sandbox-checkout">Open provider checkout</button>
                                         </form>
                                     @endif
                                     <button class="button" wire:click="recover" wire:loading.attr="disabled" data-testid="sandbox-reconcile">Reconcile provider state</button>
