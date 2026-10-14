@@ -71,6 +71,25 @@ class SandboxAccessTest extends SandboxTestCase
         $this->assertDatabaseCount('payments', 0);
     }
 
+    public function test_return_without_browser_session_explains_expiry_without_disclosing_the_order(): void
+    {
+        $order = $this->sandboxOrder();
+        $this->get('/sandbox/orders/'.$order->id.'/return')->assertRedirect(route('lab'))->assertSessionHas('sandbox_return_notice');
+        $this->get(route('lab'))->assertSee('Your browser session expired.')->assertDontSee($order->id);
+        $this->assertDatabaseCount('payments', 0);
+        Http::assertNothingSent();
+    }
+
+    public function test_return_with_expired_sandbox_session_never_confirms_payment(): void
+    {
+        $session = $this->sandbox();
+        $order = $this->sandboxOrder('stripe', $session);
+        $session->update(['expires_at' => now()->subMinute()]);
+        $this->withSession(['lab_session' => $order->demo_session_id])->get('/sandbox/orders/'.$order->id.'/return')->assertRedirect(route('lab'))->assertSessionHas('sandbox_return_notice');
+        $this->assertDatabaseCount('payments', 0);
+        Http::assertNothingSent();
+    }
+
     public function test_simulated_confirmation_cannot_be_applied_to_sandbox_order(): void
     {
         $order = $this->sandboxOrder();

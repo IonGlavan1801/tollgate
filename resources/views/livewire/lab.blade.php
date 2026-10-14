@@ -45,6 +45,9 @@
             @if ($error)
                 <p role="alert" class="alert error">{{ $error }}</p>
             @endif
+            @if ($notice)
+                <p role="status" class="alert notice">{{ $notice }}</p>
+            @endif
             <div class="landing-features">
                 <article><span class="feature-index">01 / DELIVERY</span>
                     <h2>One event. Many arrivals.</h2>

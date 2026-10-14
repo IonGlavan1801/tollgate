@@ -103,6 +103,7 @@ class Lab extends Component
 
     public function mount(): void
     {
+        $this->notice = (string) session()->pull('sandbox_return_notice', '');
         $this->sandboxPriceId = (int) DB::table('prices')->orderBy('amount_minor')->value('id');
         $selected = session()->pull('sandbox_selected_order');
         if (is_string($selected)) {
