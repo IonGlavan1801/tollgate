@@ -71,12 +71,55 @@ final class StripeSandboxProvider implements SandboxProvider
         } elseif (in_array($action, ['pause', 'resume'], true)) {
             $this->http->request('stripe', 'POST', $path, ['pause_collection' => $action === 'pause' ? ['behavior' => 'void'] : ''], $key);
         } elseif ($action === 'upgrade') {
-            $this->http->request('stripe', 'POST', $path, ['items' => [['id' => $parameters['item_id'], 'price' => $this->catalog->price('stripe', (int) $parameters['price_id'])]], 'proration_behavior' => 'always_invoice', 'proration_date' => $parameters['proration_date'], 'payment_behavior' => 'pending_if_incomplete'], $key);
+            $targetPrice = $this->catalog->price('stripe', (int) $parameters['price_id']);
+            $subscription = $this->http->request('stripe', 'POST', $path, ['items' => [['id' => $parameters['item_id'], 'price' => $targetPrice]], 'proration_behavior' => 'always_invoice', 'proration_date' => $parameters['proration_date'], 'payment_behavior' => 'pending_if_incomplete'], $key);
+            $pending = $this->pendingChange($subscription);
+            if ($pending === null && ($subscription['items']['data'][0]['price']['id'] ?? null) === $targetPrice) {
+                return ['id' => $id, 'status' => 'accepted', 'change' => 'applied'];
+            }
+
+            return ['id' => $id, 'status' => 'accepted', 'change' => $pending['state'] ?? 'pending', 'hosted_url' => $pending['hosted_url'] ?? null];
         } else {
             throw new \DomainException('Unsupported Stripe sandbox action.');
         }
 
         return ['id' => $id, 'status' => 'accepted'];
+    }
+
+    /**
+     * Describes an upgrade Stripe accepted but has not applied because its payment is incomplete.
+     *
+     * @param  array<string, mixed>  $subscription
+     * @return array{state: string, price_id: int|null, hosted_url: string|null}|null
+     */
+    private function pendingChange(array $subscription): ?array
+    {
+        $update = $subscription['pending_update'] ?? null;
+        if (! is_array($update)) {
+            return null;
+        }
+        $priceId = $update['subscription_items'][0]['price'] ?? null;
+        $priceId = is_array($priceId) ? ($priceId['id'] ?? null) : $priceId;
+        $state = 'pending';
+        $hostedUrl = null;
+        $invoiceId = $subscription['latest_invoice'] ?? null;
+        $invoiceId = is_array($invoiceId) ? ($invoiceId['id'] ?? null) : $invoiceId;
+        if (is_string($invoiceId)) {
+            $invoice = $this->http->request('stripe', 'GET', '/invoices/'.SandboxData::id($invoiceId));
+            $hostedUrl = is_string($invoice['hosted_invoice_url'] ?? null) ? SandboxData::hostedInvoiceUrl($invoice['hosted_invoice_url']) : null;
+            $payments = $this->http->request('stripe', 'GET', '/invoice_payments', ['invoice' => $invoiceId, 'limit' => 10]);
+            $paymentId = $payments['data'][0]['payment']['payment_intent'] ?? null;
+            if (is_string($paymentId)) {
+                $intent = $this->http->request('stripe', 'GET', '/payment_intents/'.SandboxData::id($paymentId));
+                $state = match ($intent['status'] ?? '') {
+                    'requires_action' => 'requires_action',
+                    'requires_payment_method', 'canceled' => 'payment_failed',
+                    default => 'pending',
+                };
+            }
+        }
+
+        return ['state' => $state, 'price_id' => is_string($priceId) ? $this->catalog->localPrice('stripe', $priceId) : null, 'hosted_url' => $hostedUrl];
     }
 
     public function preview(Order $order, int $priceId): array
@@ -176,12 +219,13 @@ final class StripeSandboxProvider implements SandboxProvider
                 $payments[] = ['id' => $paymentId, 'amount_minor' => (int) $intent['amount_received'], 'currency' => strtoupper($intent['currency']), 'initial' => $invoice['billing_reason'] === 'subscription_create', 'refunds' => $normalizedRefunds, 'dispute' => $dispute];
             }
         }
+        $pending = $this->pendingChange($subscription);
         $status = match ($subscription['status']) {
             'active' => ! empty($subscription['pause_collection']) ? 'paused' : 'active',
             'trialing' => 'trialing', 'past_due' => 'past_due', 'unpaid', 'paused' => 'suspended',
             'canceled', 'incomplete_expired' => 'canceled', default => 'trialing',
         };
 
-        return ['subscription' => ['id' => $id, 'price_id' => $priceId, 'status' => $status, 'period_start' => (int) $item['current_period_start'], 'period_end' => (int) $item['current_period_end'], 'cancel_at_period_end' => (bool) ($subscription['cancel_at_period_end'] ?? false) || ! empty($subscription['cancel_at'])], 'payments' => $payments];
+        return ['subscription' => ['id' => $id, 'price_id' => $priceId, 'status' => $status, 'period_start' => (int) $item['current_period_start'], 'period_end' => (int) $item['current_period_end'], 'cancel_at_period_end' => (bool) ($subscription['cancel_at_period_end'] ?? false) || ! empty($subscription['cancel_at'])], 'payments' => $payments, 'pending_change' => $pending];
     }
 }

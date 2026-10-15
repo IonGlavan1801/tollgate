@@ -249,9 +249,16 @@ class Lab extends Component
             abort_unless($this->preview !== null, 409, 'Preview the change first.');
             if ($this->isSandbox()) {
                 $this->sandboxBudget();
-                app(SandboxBilling::class)->confirm($this->sessionId(), $this->selectedOrder ?? '', $this->preview['id']);
+                $previewId = $this->preview['id'];
+                app(SandboxBilling::class)->confirm($this->sessionId(), $this->selectedOrder ?? '', $previewId);
                 $this->preview = null;
-                $this->notice = 'Plan change submitted. Payment is confirmed by provider reconciliation.';
+                $change = DB::table('subscription_changes')->where('id', $previewId)->first();
+                $this->notice = match ($change?->status) {
+                    'applied' => 'Plan changed. The provider confirmed the additional payment.',
+                    'requires_action' => 'The additional payment needs authentication. The current plan is unchanged until it is completed.',
+                    'payment_failed' => 'The additional payment was declined. The current plan is unchanged; retry the payment or preview again.',
+                    default => 'Plan change submitted. The current plan stays until the provider confirms the payment.',
+                };
 
                 return;
             }
@@ -346,11 +353,26 @@ class Lab extends Component
             $stats['p95'] = null;
         }
         $sandboxPlans = DB::table('prices')->join('plans', 'prices.plan_id', '=', 'plans.id')->orderBy('prices.amount_minor')->get(['prices.id', 'prices.amount_minor', 'plans.name']);
-        $sandboxOperations = $selected && $sandbox ? DB::table('sandbox_operations')->where('order_id', $selected->id)->latest()->limit(15)->get() : collect();
+        $sandboxChange = $selected && $sandbox && $sub ? DB::table('subscription_changes')->where('subscription_id', $sub->id)->whereIn('status', ['requires_action', 'pending', 'payment_failed', 'not_applied'])->latest('updated_at')->first() : null;
+        $sandboxOperations = $selected && $sandbox ? DB::table('sandbox_operations')->where('order_id', $selected->id)->latest()->limit(15)->get()->map(function ($operation) {
+            $operation->label = $operation->status;
+            if ($operation->action === 'upgrade' && $operation->status === 'succeeded') {
+                $previewId = substr((string) (json_decode($operation->parameters, true)['_request_key'] ?? ''), strlen('upgrade-'));
+                $operation->label = match (DB::table('subscription_changes')->where('id', $previewId)->value('status')) {
+                    'applied' => 'plan changed',
+                    'requires_action' => 'authentication required',
+                    'payment_failed' => 'payment declined',
+                    'not_applied' => 'not applied',
+                    default => 'awaiting payment confirmation',
+                };
+            }
+
+            return $operation;
+        }) : collect();
 
         $sandboxRefunds = $selected && $sandbox ? DB::table('refunds')->join('payments', 'refunds.payment_id', '=', 'payments.id')->where('payments.order_id', $selected->id)->orderByDesc('refunds.created_at')->limit(10)->get(['refunds.amount_minor', 'refunds.status']) : collect();
         $sandboxDisputes = $selected && $sandbox ? DB::table('disputes')->join('payments', 'disputes.payment_id', '=', 'payments.id')->where('payments.order_id', $selected->id)->orderByDesc('disputes.created_at')->limit(10)->get(['disputes.amount_minor', 'disputes.status']) : collect();
 
-        return view('livewire.lab', compact('sandboxRefunds', 'sandboxDisputes', 'sandbox', 'sandboxPlans', 'sandboxOperations', 'demo', 'orders', 'selected', 'sub', 'subPrice', 'payment', 'events', 'webhooks', 'ledger', 'invoices', 'mail', 'tax', 'stats'))->layout('components.layouts.app');
+        return view('livewire.lab', compact('sandboxRefunds', 'sandboxDisputes', 'sandbox', 'sandboxPlans', 'sandboxOperations', 'sandboxChange', 'demo', 'orders', 'selected', 'sub', 'subPrice', 'payment', 'events', 'webhooks', 'ledger', 'invoices', 'mail', 'tax', 'stats'))->layout('components.layouts.app');
     }
 }

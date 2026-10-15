@@ -44,4 +44,14 @@ final class SandboxData
 
         return $url;
     }
+
+    public static function hostedInvoiceUrl(string $url): ?string
+    {
+        $parts = parse_url($url);
+        if (! is_array($parts) || ($parts['scheme'] ?? '') !== 'https' || ($parts['host'] ?? '') !== 'invoice.stripe.com' || isset($parts['user']) || isset($parts['pass']) || (isset($parts['port']) && $parts['port'] !== 443)) {
+            return null;
+        }
+
+        return $url;
+    }
 }

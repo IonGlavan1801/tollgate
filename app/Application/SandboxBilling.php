@@ -60,6 +60,7 @@ final class SandboxBilling
         }, 3);
         $snapshot = app(SandboxProviders::class)->for($order->provider)->snapshot($order);
         app(SandboxState::class)->apply($order, $snapshot, $version);
+        $this->settleUpgrades($order, $snapshot);
         $session = DemoSession::findOrFail($order->demo_session_id);
         if (($snapshot['mandate_ready'] ?? false) && $session->revoked_at === null && $session->expires_at->isFuture() && $order->cleanup_completed_at === null) {
             app(SandboxOperations::class)->execute($order, 'activate_subscription', [], 'activate-'.$order->id, true);
@@ -119,12 +120,48 @@ final class SandboxBilling
         $subscription = BillingSubscription::where('order_id', $order->id)->firstOrFail();
         $preview = DB::table('subscription_changes')->where('id', $previewId)->where('subscription_id', $subscription->id)->first();
         abort_unless($preview && $preview->provider_parameters, 404);
-        if ($preview->status === 'applied') {
+        if (in_array($preview->status, ['applied', 'requires_action', 'pending', 'payment_failed'], true)) {
+            $this->reconcile($order);
+
             return;
         }
+        abort_if($preview->status !== 'preview', 409, 'This plan change is no longer available. Preview it again.');
         abort_if($subscription->status !== 'active' || $subscription->version !== (int) $preview->subscription_version || CarbonImmutable::parse($preview->expires_at)->isPast(), 409, 'Preview expired or subscription changed.');
-        app(SandboxOperations::class)->execute($order, 'upgrade', json_decode($preview->provider_parameters, true, 32, JSON_THROW_ON_ERROR), 'upgrade-'.$previewId);
-        DB::table('subscription_changes')->where('id', $previewId)->update(['status' => 'applied', 'updated_at' => now()]);
+        $result = app(SandboxOperations::class)->execute($order, 'upgrade', json_decode($preview->provider_parameters, true, 32, JSON_THROW_ON_ERROR), 'upgrade-'.$previewId);
+        $state = in_array($result['change'] ?? null, ['applied', 'requires_action', 'payment_failed'], true) ? $result['change'] : 'pending';
+        DB::table('subscription_changes')->where('id', $previewId)->update(['status' => $state, 'provider_state' => json_encode(['hosted_url' => $result['hosted_url'] ?? null], JSON_THROW_ON_ERROR), 'updated_at' => now()]);
         $this->reconcile($order);
+    }
+
+    /**
+     * The plan only counts as changed once the provider snapshot shows it; a change whose payment
+     * is incomplete stays pending and keeps the verified payment link for the customer.
+     *
+     * @param  array<string, mixed>  $snapshot
+     */
+    private function settleUpgrades(Order $order, array $snapshot): void
+    {
+        $subscription = BillingSubscription::where('order_id', $order->id)->first();
+        if (! $subscription || ! isset($snapshot['subscription'])) {
+            return;
+        }
+        $pending = $snapshot['pending_change'] ?? null;
+        foreach (DB::table('subscription_changes')->where('subscription_id', $subscription->id)->whereIn('status', ['requires_action', 'pending', 'payment_failed'])->get() as $change) {
+            if ((int) $change->price_id === $subscription->price_id) {
+                $status = 'applied';
+                $state = null;
+            } elseif (is_array($pending) && $pending['price_id'] === (int) $change->price_id) {
+                $status = $pending['state'];
+                $state = json_encode(['hosted_url' => $pending['hosted_url']], JSON_THROW_ON_ERROR);
+            } elseif (CarbonImmutable::parse($change->updated_at)->lt(now()->subMinutes(15))) {
+                $status = 'not_applied';
+                $state = null;
+            } else {
+                continue;
+            }
+            if ($status !== $change->status) {
+                DB::table('subscription_changes')->where('id', $change->id)->update(['status' => $status, 'provider_state' => $state ?? $change->provider_state, 'updated_at' => now()]);
+            }
+        }
     }
 }

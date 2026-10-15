@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Application\SandboxBilling;
 use App\Infrastructure\Providers\PayPalSandboxProvider;
 use App\Infrastructure\Providers\SandboxCatalog;
+use App\Models\BillingSubscription;
+use App\Models\Order;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -86,7 +88,63 @@ class SandboxLifecycleTest extends SandboxTestCase
         Http::assertSent(fn ($request) => $request->method() === 'POST' && str_ends_with($request->url(), '/subscriptions/sub_test') && $request['proration_date'] === $preview['proration_date'] && $request['payment_behavior'] === 'pending_if_incomplete');
         $this->assertDatabaseCount('payments', 1);
         $this->assertDatabaseCount('ledger_transactions', 1);
+        $this->assertDatabaseHas('subscription_changes', ['id' => $preview['id'], 'status' => 'pending']);
+    }
+
+    /**
+     * @return array{0: Order, 1: array<string, mixed>}
+     */
+    private function pendingUpgrade(string $intentStatus): array
+    {
+        $order = $this->sandboxOrder();
+        $this->applySnapshot($order, $this->snapshot($order));
+        $targetPrice = 'stripeprice'.DB::table('prices')->orderByDesc('amount_minor')->value('id');
+        $subscription = ['id' => 'sub_test', 'metadata' => ['order_id' => $order->id], 'customer' => 'cus_test', 'status' => 'active', 'livemode' => false, 'latest_invoice' => 'in_up', 'pending_update' => ['subscription_items' => [['price' => $targetPrice]]], 'items' => ['data' => [['id' => 'si_test', 'current_period_start' => now()->subDay()->timestamp, 'current_period_end' => now()->addMonth()->timestamp, 'price' => ['id' => 'stripeprice'.$order->price_id]]]]];
+        $this->stripeResponses($order, [
+            'https://api.stripe.com/v1/invoices/create_preview' => Http::response(['amount_due' => 8000, 'livemode' => false]),
+            'https://api.stripe.com/v1/subscriptions/sub_test' => fn ($request) => Http::response($subscription),
+            'https://api.stripe.com/v1/invoices/in_up' => Http::response(['id' => 'in_up', 'livemode' => false, 'hosted_invoice_url' => 'https://invoice.stripe.com/i/acct/test_123']),
+            'https://api.stripe.com/v1/invoice_payments*' => Http::response(['data' => [['status' => 'open', 'payment' => ['type' => 'payment_intent', 'payment_intent' => 'pi_up']]], 'has_more' => false]),
+            'https://api.stripe.com/v1/payment_intents/pi_up' => Http::response(['id' => 'pi_up', 'status' => $intentStatus, 'livemode' => false]),
+        ]);
+
+        return [$order, app(SandboxBilling::class)->preview($order->demo_session_id, $order->id)];
+    }
+
+    public function test_upgrade_requiring_authentication_keeps_plan_and_exposes_verified_payment_link(): void
+    {
+        [$order, $preview] = $this->pendingUpgrade('requires_action');
+        $billing = app(SandboxBilling::class);
+        $billing->confirm($order->demo_session_id, $order->id, $preview['id']);
+        $billing->confirm($order->demo_session_id, $order->id, $preview['id']);
+        $change = DB::table('subscription_changes')->where('id', $preview['id'])->first();
+        $this->assertSame('requires_action', $change->status);
+        $this->assertSame('https://invoice.stripe.com/i/acct/test_123', json_decode($change->provider_state, true)['hosted_url']);
+        $this->assertSame($order->price_id, BillingSubscription::where('order_id', $order->id)->value('price_id'));
+        $this->assertDatabaseCount('payments', 1);
+        $upgrades = Http::recorded(fn ($request) => $request->method() === 'POST' && str_ends_with($request->url(), '/subscriptions/sub_test'));
+        $this->assertCount(1, $upgrades);
+    }
+
+    public function test_declined_upgrade_payment_is_reported_and_plan_is_kept(): void
+    {
+        [$order, $preview] = $this->pendingUpgrade('requires_payment_method');
+        app(SandboxBilling::class)->confirm($order->demo_session_id, $order->id, $preview['id']);
+        $this->assertDatabaseHas('subscription_changes', ['id' => $preview['id'], 'status' => 'payment_failed']);
+        $this->assertSame($order->price_id, BillingSubscription::where('order_id', $order->id)->value('price_id'));
+    }
+
+    public function test_pending_upgrade_is_applied_only_when_the_provider_snapshot_shows_the_new_plan(): void
+    {
+        [$order, $preview] = $this->pendingUpgrade('requires_action');
+        $billing = app(SandboxBilling::class);
+        $billing->confirm($order->demo_session_id, $order->id, $preview['id']);
+        $teamPrice = (int) DB::table('prices')->orderByDesc('amount_minor')->value('id');
+        $subscriptionId = BillingSubscription::where('order_id', $order->id)->value('id');
+        $this->stripeResponses($order, ['https://api.stripe.com/v1/subscriptions/sub_test' => Http::response(['id' => 'sub_test', 'metadata' => ['order_id' => $order->id], 'customer' => 'cus_test', 'status' => 'active', 'livemode' => false, 'items' => ['data' => [['id' => 'si_test', 'current_period_start' => now()->subDay()->timestamp, 'current_period_end' => now()->addMonth()->timestamp, 'price' => ['id' => 'stripeprice'.$teamPrice]]]]])]);
+        $billing->reconcile($order->fresh());
         $this->assertDatabaseHas('subscription_changes', ['id' => $preview['id'], 'status' => 'applied']);
+        $this->assertSame($teamPrice, BillingSubscription::whereKey($subscriptionId)->value('price_id'));
     }
 
     public function test_expired_upgrade_preview_is_rejected_before_provider_mutation(): void

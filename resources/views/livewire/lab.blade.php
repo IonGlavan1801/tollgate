@@ -274,7 +274,7 @@
                                     <div class="document-row"><span>Dispute · {{ \App\Domain\Billing\Money::format($disputeRecord->amount_minor) }}</span><b>{{ $disputeRecord->status }}</b></div>
                                 @endforeach
                                 @foreach ($sandboxOperations as $operation)
-                                    <div class="inbox-row"><span>{{ $operation->action }} · {{ $operation->status }}</span>
+                                    <div class="inbox-row"><span>{{ $operation->action }} · {{ $operation->label }}</span>
                                         @if (in_array($operation->status, ['uncertain', 'running']))
                                             <button class="button" wire:click="retrySandboxOperation('{{ $operation->id }}')" wire:loading.attr="disabled">Retry original operation</button>
                                         @elseif ($operation->status === 'review')
@@ -282,6 +282,22 @@
                                         @endif
                                     </div>
                                 @endforeach
+                            @endif
+                            @if ($sandbox && ($sandboxChange ?? null))
+                                @php($changeUrl = json_decode($sandboxChange->provider_state ?? 'null', true)['hosted_url'] ?? null)
+                                <div class="preview-box" data-testid="pending-change">
+                                    <div><strong>{{ match ($sandboxChange->status) {
+                                        'requires_action' => 'Authentication required',
+                                        'payment_failed' => 'Additional payment declined',
+                                        'not_applied' => 'Plan change not applied',
+                                        default => 'Plan change awaiting payment' } }}</strong>
+                                        <p>{{ \App\Domain\Billing\Money::format($sandboxChange->proration_minor) }} additional charge. Your plan stays unchanged until the provider confirms the payment.
+                                            @if ($sandboxChange->status === 'not_applied') The provider discarded the change; preview it again to retry.@endif</p>
+                                    </div>
+                                    @if ($changeUrl && in_array($sandboxChange->status, ['requires_action', 'payment_failed', 'pending']))
+                                        <a class="button primary" href="{{ $changeUrl }}" target="_blank" rel="noopener noreferrer" data-testid="continue-payment">{{ $sandboxChange->status === 'payment_failed' ? 'Retry payment' : 'Continue payment' }}</a>
+                                    @endif
+                                </div>
                             @endif
                             @if ($preview)
                                 <div class="preview-box">

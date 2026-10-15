@@ -8,7 +8,7 @@ interface SandboxProvider
 {
     /**
      * @param  array<string, mixed>  $parameters
-     * @return array{id?: string, url?: string, status?: string} Sanitized result, never credentials or customer PII.
+     * @return array{id?: string, url?: string, status?: string, change?: string, hosted_url?: string|null} Sanitized result, never credentials or customer PII.
      */
     public function execute(Order $order, string $action, array $parameters, string $key): array;
 
@@ -16,6 +16,7 @@ interface SandboxProvider
      * @return array{
      *     order_status?: string,
      *     mandate_ready?: bool,
+     *     pending_change?: array{state: string, price_id: int|null, hosted_url: string|null}|null,
      *     subscription?: array{id: string, price_id: int, status: string, period_start: int, period_end: int, cancel_at_period_end: bool},
      *     payments?: list<array{id: string, amount_minor: int, currency: string, initial: bool, refunds: list<array{id: string, amount_minor: int, status: string}>, dispute: array{id: string, amount_minor: int, status: string}|null}>
      * } Authoritative current state, fetched from fixed provider API hosts.
