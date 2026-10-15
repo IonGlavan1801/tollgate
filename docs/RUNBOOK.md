@@ -20,7 +20,7 @@ The backup service writes a daily dump and retains daily dumps for seven days. P
 
 After each deployment, check `https://tollgate.syslora.com/health`, secure cookies, CSRF, checkout/replay and demo inbox delivery through the public URL. Keep the deployment SHA with the validation result. Never run `docker compose down -v` on the VPS.
 
-Native adapters and gated access are implemented locally. Activation requires the configuration below and credentialed end-to-end checks. No real payments are enabled.
+Native adapters and gated access are deployed. The existing VPS configuration connects all three provider sandboxes. The setup below also applies to a fresh installation; repeat credentialed checks after changing accounts or keys. No real payments are enabled.
 
 ## Sandbox setup
 
@@ -48,7 +48,7 @@ Repeated catalog commands reuse local mappings. If catalog provisioning loses a 
 
 Stripe: `https://tollgate.syslora.com/webhooks/stripe`, snapshot events with API version matching `Stripe\Util\ApiVersion::CURRENT` from the installed SDK. Subscribe to checkout completion/expiry/asynchronous payment results; subscription created/updated/deleted; invoice paid/payment failed/action required; refund changes; charge refunded; dispute created/updated/closed. The signing secret belongs to this destination, not a Stripe CLI forwarding session.
 
-PayPal: `https://tollgate.syslora.com/webhooks/paypal` in the sandbox REST app. Subscribe to `BILLING.SUBSCRIPTION.*`, `PAYMENT.SALE.*` and `CUSTOMER.DISPUTE.*` events supported by that app. Save the Webhook ID. Actual test payments should be made with a separate sandbox buyer account. PayPal's generic webhook simulator is not a substitute for app-bound signed sandbox events and is not accepted by this verification flow.
+PayPal: `https://tollgate.syslora.com/webhooks/paypal` in the sandbox REST app. Subscribe to subscription created, activated, updated, suspended, cancelled, expired and payment-failed events (`BILLING.SUBSCRIPTION.*`); sale completed, refunded and reversed events (`PAYMENT.SALE.*`); and dispute created, updated and resolved events (`CUSTOMER.DISPUTE.*`) supported by that app. Orders/Captures events alone do not cover this subscription integration. Save the Webhook ID. Actual test payments should be made with a separate sandbox buyer account. PayPal's generic webhook simulator is not a substitute for app-bound signed sandbox events and is not accepted by this verification flow.
 
 Mollie: the application supplies its `webhookUrl` on first payments and subscriptions. It includes an order UUID and a scoped token; do not configure a bare `/webhooks/mollie` URL or strip its query string. No separate webhook secret is required for this classic webhook flow. The first payment must establish a valid mandate before the app creates a monthly subscription. Enable suitable recurring methods in the Mollie profile.
 

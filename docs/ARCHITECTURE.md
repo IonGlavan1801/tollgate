@@ -1,6 +1,6 @@
 # Architecture
 
-A modular monolith keeps the payment mutation, ledger posting and outbox write in one PostgreSQL transaction. `Domain` holds money, lifecycle rules and provider contracts; `Application` coordinates use cases; `Infrastructure` implements the simulator; HTTP and Livewire expose session-scoped actions.
+A modular monolith keeps the payment mutation, ledger posting and outbox write in one PostgreSQL transaction. `Domain` holds money, lifecycle rules and provider contracts; `Application` coordinates use cases; `Infrastructure` implements the simulator and native sandbox adapters; HTTP and Livewire expose session-scoped actions.
 
 Splitting these writes across services would introduce partial failures without a useful deployment boundary for this lab. Redis carries jobs, while PostgreSQL remains the source of truth. Locking the session serializes its mutations and simplifies replay recovery; this favors isolation and correctness over throughput within one demo session.
 
@@ -23,7 +23,7 @@ A delivery is distinct from an event. `(provider, environment, external_event_id
 
 Money uses integer minor units. Each ledger transaction has one currency, at least two entries and equal debits and credits, enforced by deferred PostgreSQL triggers. Transactions and entries cannot be edited or deleted; new entries cannot be appended after commit. Refunds and dispute recovery create separate reversals. Invoice numbers are allocated under a sequence row lock at issuance.
 
-Provider choice applies to a new order. Existing payments and subscriptions retain their originating provider. The capability matrix describes simulator availability, including unavailable operations. The internal HMAC format is not a Stripe, PayPal or Mollie verification scheme. Native sandbox adapters use separate verification and are covered by HTTP contract tests before activation; credentialed smoke tests are still required on the VPS.
+Provider choice applies to a new order. Existing payments and subscriptions retain their originating provider. Separate capability matrices describe simulated and native operations, including unavailable operations. The internal HMAC format is not a Stripe, PayPal or Mollie verification scheme. Native sandbox adapters use separate verification and HTTP contract tests, supplemented by credentialed checkout checks on the VPS.
 
 Livewire polls every two seconds. This keeps the transport simple; it is not SSE. Tax uses synthetic fixtures and always retains a review decision. The demo outbox destination is a database inbox, which makes delivery retries testable without sending external email.
 

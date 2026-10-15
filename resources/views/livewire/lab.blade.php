@@ -407,7 +407,7 @@
             </div>
         </main>
     @endif
-    <footer><span>tollgate <span class="muted">/ payment reliability lab</span></span><span
+    <footer><span>tollgate <span class="muted">/ payment reliability lab</span> · <a href="https://github.com/IonGlavan1801/tollgate" rel="noopener noreferrer" target="_blank">Source code ↗</a></span><span
             class="mono muted">Laravel · PostgreSQL · Redis</span></footer>
     <div wire:loading.delay class="working" role="status">Working…</div>
 </div>

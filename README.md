@@ -1,6 +1,8 @@
 # Tollgate
 
-A payment reliability lab for webhook replay, subscription recovery and double-entry accounting. The public simulator uses isolated fixtures; gated sessions can connect to Stripe, PayPal and Mollie test APIs. No real money is collected.
+[![Checks](https://github.com/IonGlavan1801/tollgate/actions/workflows/ci.yml/badge.svg)](https://github.com/IonGlavan1801/tollgate/actions/workflows/ci.yml)
+
+A payment reliability lab for webhook replay, subscription recovery and double-entry accounting. The public simulator uses isolated fixtures; gated sessions connect to Stripe, PayPal and Mollie test APIs. No real money is collected.
 
 ## Problems the lab explores
 
@@ -19,7 +21,7 @@ Native sandbox adapters provide provider-specific webhook verification, external
 
 **Stack:** Laravel 13 · PHP 8.4 · Livewire 3 / Alpine · PostgreSQL 17 · Redis / Horizon · Docker · Playwright.
 
-**Demo:** [tollgate.syslora.com](https://tollgate.syslora.com). Provider sandbox activation is separately configured; no real payments are enabled.
+**Demo:** [tollgate.syslora.com](https://tollgate.syslora.com). Try the public simulator without an account, or use a sandbox access code for provider-hosted test checkout. All three sandbox integrations are configured on the deployed application; live payments are disabled.
 
 ```sh
 bash scripts/setup.sh
