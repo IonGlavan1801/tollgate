@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Application\SandboxBilling;
 use App\Application\SandboxOperations;
+use App\Exceptions\SandboxRejected;
 use App\Exceptions\SandboxUnavailable;
 use App\Infrastructure\Providers\SandboxCatalog;
+use App\Models\Order;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -43,6 +45,57 @@ class SandboxMaintenanceTest extends SandboxTestCase
         $this->artisan('sandbox:maintain')->assertFailed();
         $this->assertNull($order->fresh()->cleanup_completed_at);
         $this->assertDatabaseHas('sandbox_operations', ['order_id' => $order->id, 'action' => 'cleanup', 'status' => 'uncertain']);
+    }
+
+    public function test_expired_unpaid_paypal_checkout_can_be_cleaned_when_the_provider_removes_it(): void
+    {
+        $order = $this->expiredPaypalCheckout();
+        $this->artisan('sandbox:maintain')->assertSuccessful();
+        $this->assertNotNull($order->fresh()->cleanup_completed_at);
+        $this->assertSame('failed', $order->fresh()->status);
+        $this->assertDatabaseHas('sandbox_operations', ['order_id' => $order->id, 'action' => 'cleanup', 'status' => 'succeeded']);
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('ledger_transactions', 0);
+        Http::assertNotSent(fn ($request) => str_ends_with($request->url(), '/cancel'));
+    }
+
+    public function test_missing_paypal_subscription_with_financial_evidence_is_not_marked_cleaned(): void
+    {
+        $order = $this->expiredPaypalCheckout();
+        $this->applySnapshot($order, $this->snapshot($order));
+        $this->artisan('sandbox:maintain')->assertFailed();
+        $this->assertNull($order->fresh()->cleanup_completed_at);
+        $this->assertDatabaseCount('payments', 1);
+        $this->assertDatabaseCount('ledger_transactions', 1);
+    }
+
+    public function test_paypal_not_found_after_credential_rotation_cannot_confirm_cleanup(): void
+    {
+        $order = $this->expiredPaypalCheckout();
+        config(['lab.sandbox.paypal.secret' => 'rotated-sandbox-secret']);
+        $this->artisan('sandbox:maintain')->assertFailed();
+        $this->assertNull($order->fresh()->cleanup_completed_at);
+    }
+
+    public function test_paypal_not_found_without_a_completed_cleanup_remains_an_error(): void
+    {
+        $order = $this->expiredPaypalCheckout();
+        $this->expectException(SandboxRejected::class);
+        app(SandboxBilling::class)->reconcile($order);
+    }
+
+    private function expiredPaypalCheckout(): Order
+    {
+        $order = $this->sandboxOrder('paypal');
+        Http::fake([
+            'https://api-m.sandbox.paypal.com/v1/oauth2/token' => Http::response(['access_token' => 'fake-token', 'expires_in' => 3600]),
+            'https://api-m.sandbox.paypal.com/v1/billing/subscriptions' => Http::response(['id' => 'I-expired', 'links' => [['rel' => 'approve', 'href' => 'https://www.sandbox.paypal.com/approve']]]),
+            'https://api-m.sandbox.paypal.com/v1/billing/subscriptions/I-expired' => Http::response(['name' => 'RESOURCE_NOT_FOUND'], 404),
+        ]);
+        app(SandboxBilling::class)->checkout($order->demo_session_id, $order->id);
+        DB::table('demo_sessions')->where('id', $order->demo_session_id)->update(['revoked_at' => now()]);
+
+        return $order;
     }
 
     public function test_unknown_creation_result_blocks_cleanup_until_operator_resolves_it(): void

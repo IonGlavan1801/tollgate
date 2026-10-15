@@ -74,13 +74,19 @@ final class SandboxHttp
             $client = $client->withHeaders([$provider === 'paypal' ? 'PayPal-Request-Id' : 'Idempotency-Key' => $key]);
         }
         try {
-            $response = $client->send($method, $base.$path, $method === 'GET' ? ['query' => $data] : ($provider === 'stripe' ? ['form_params' => $data] : ['json' => $data]));
+            $options = match (true) {
+                $method === 'GET' => ['query' => $data],
+                $provider === 'stripe' => ['form_params' => $data],
+                $method === 'DELETE' && $data === [] => [],
+                default => ['json' => $data],
+            };
+            $response = $client->send($method, $base.$path, $options);
         } catch (ConnectionException) {
             throw new SandboxUnavailable('Provider could not confirm the result. Reconciliation is required.');
         }
         if (! $response->successful()) {
             if ($response->clientError() && ! in_array($response->status(), [401, 403, 408, 409, 429], true)) {
-                throw new SandboxRejected('Provider rejected the request (HTTP '.$response->status().').');
+                throw new SandboxRejected('Provider rejected the request (HTTP '.$response->status().').', $response->status());
             }
             throw new SandboxUnavailable('Provider result is temporarily unavailable.');
         }

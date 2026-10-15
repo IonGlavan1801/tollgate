@@ -4,6 +4,7 @@ namespace App\Infrastructure\Providers;
 
 use App\Domain\Providers\SandboxData;
 use App\Domain\Providers\SandboxProvider;
+use App\Exceptions\SandboxRejected;
 use App\Exceptions\SandboxUnavailable;
 use App\Models\Order;
 use Carbon\CarbonImmutable;
@@ -56,7 +57,15 @@ final class PayPalSandboxProvider implements SandboxProvider
             default => throw new \DomainException('Unsupported PayPal sandbox action.'),
         };
         $path = '/v1/billing/subscriptions/'.SandboxData::id($id);
-        $current = $this->http->request('paypal', 'GET', $path);
+        try {
+            $current = $this->http->request('paypal', 'GET', $path);
+        } catch (SandboxRejected $exception) {
+            if ($action === 'cleanup' && $this->isExpiredUnpaidCheckout($order, $exception)) {
+                return ['id' => $id, 'status' => 'expired'];
+            }
+
+            throw $exception;
+        }
         $desired = match ($remoteAction) {
             'suspend' => 'SUSPENDED', 'activate' => 'ACTIVE', default => 'CANCELLED'
         };
@@ -73,7 +82,15 @@ final class PayPalSandboxProvider implements SandboxProvider
         if ($id === null) {
             return ['order_status' => 'pending'];
         }
-        $subscription = $this->http->request('paypal', 'GET', '/v1/billing/subscriptions/'.SandboxData::id($id));
+        try {
+            $subscription = $this->http->request('paypal', 'GET', '/v1/billing/subscriptions/'.SandboxData::id($id));
+        } catch (SandboxRejected $exception) {
+            if ($this->isExpiredUnpaidCheckout($order, $exception) && DB::table('sandbox_operations')->where('order_id', $order->id)->where('action', 'cleanup')->where('status', 'succeeded')->exists()) {
+                return ['order_status' => 'failed'];
+            }
+
+            throw $exception;
+        }
         if (($subscription['custom_id'] ?? null) !== $order->id) {
             throw new SandboxUnavailable('PayPal subscription ownership mismatch.');
         }
@@ -129,5 +146,14 @@ final class PayPalSandboxProvider implements SandboxProvider
         };
 
         return ['subscription' => ['id' => $id, 'price_id' => $priceId, 'status' => $status, 'period_start' => $start, 'period_end' => max($start + 1, $end), 'cancel_at_period_end' => false], 'payments' => $payments];
+    }
+
+    private function isExpiredUnpaidCheckout(Order $order, SandboxRejected $exception): bool
+    {
+        return $exception->getCode() === 404
+            && in_array($order->status, ['pending', 'failed'], true)
+            && ! DB::table('payments')->where('order_id', $order->id)->exists()
+            && ! DB::table('subscriptions')->where('order_id', $order->id)->exists()
+            && DB::table('sandbox_operations')->where('order_id', $order->id)->where('action', 'checkout')->where('status', 'succeeded')->where('credential_hash', $this->http->credentialHash('paypal'))->exists();
     }
 }

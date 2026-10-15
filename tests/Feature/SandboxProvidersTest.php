@@ -92,6 +92,17 @@ class SandboxProvidersTest extends SandboxTestCase
         }
     }
 
+    public function test_mollie_cancellation_sends_no_json_array_body(): void
+    {
+        $order = $this->sandboxOrder('mollie');
+        $catalog = app(SandboxCatalog::class);
+        $catalog->map($order, 'customer', 'cst_test');
+        $catalog->map($order, 'subscription', 'sub_test');
+        Http::fake(['https://api.mollie.com/v2/customers/cst_test/subscriptions/sub_test' => fn ($request) => $request->method() === 'DELETE' ? Http::response('', 204) : Http::response(['id' => 'sub_test', 'status' => 'active'])]);
+        app(MollieSandboxProvider::class)->execute($order, 'cancel_now', [], 'cancel-key');
+        Http::assertSent(fn ($request) => $request->method() === 'DELETE' && $request->body() === '');
+    }
+
     public function test_mollie_paid_checkout_activates_and_reconciles_without_duplicate_accounting(): void
     {
         $order = $this->sandboxOrder('mollie');
